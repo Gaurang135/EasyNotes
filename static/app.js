@@ -131,7 +131,14 @@ $("#search-form").addEventListener("submit", async (ev) => {
   const q = $("#q").value.trim(); if (!q) return;
   const box = $("#results"); box.innerHTML = `<p class="empty">Searching…</p>`;
   const data = await (await fetch(`/search?q=${encodeURIComponent(q)}&mode=${searchMode}`)).json();
-  if (!data.results.length) { box.innerHTML = `<p class="empty">No matches for “${esc(q)}”.</p>`; return; }
+  const answersHtml = (data.answers && data.answers.length) ? `
+    <div class="answers">
+      <div class="answers-h">Direct answers</div>
+      <div class="answers-grid">${data.answers.map((a) =>
+        `<div class="ans" data-doc="${a.document_id}"><span class="ans-kind">${a.kind}</span><span class="ans-val">${esc(a.value)}</span><span class="ans-src">${esc(a.document_title)}</span></div>`).join("")}</div>
+    </div>` : "";
+  if (!data.results.length && !answersHtml) { box.innerHTML = `<p class="empty">No matches for “${esc(q)}”.</p>`; return; }
+  if (!data.results.length) { box.innerHTML = answersHtml; wireAnswerClicks(); return; }
   const top = Math.max(...data.results.map((h) => h.score)) || 1;
   const isTable = (h) => ["csv", "xlsx"].includes(h.file_type) || (h.location || "").match(/row|sheet/i);
   box.innerHTML = data.results.map((h, i) => {
@@ -146,8 +153,13 @@ $("#search-form").addEventListener("submit", async (ev) => {
       </div><div class="snip">${preview}</div>
       <div class="card-cta">Open document →</div></article>`;
   }).join("");
+  box.innerHTML = answersHtml + box.innerHTML;
   $$("#results .card").forEach((el) => el.addEventListener("click", () => openDetail(el.dataset.doc)));
+  wireAnswerClicks();
 });
+function wireAnswerClicks() {
+  $$("#results .ans").forEach((el) => el.addEventListener("click", () => openDetail(el.dataset.doc)));
+}
 
 /* ---------- document detail (messy doc -> extracted structured data) ---------- */
 async function openDetail(docId) {

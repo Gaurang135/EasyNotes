@@ -23,6 +23,43 @@ def content_terms(query: str) -> list[str]:
     return sorted(set(terms), key=len, reverse=True)
 
 
+# LLM-free query router: map natural-language intent to an extracted field kind, so
+# "total amount in invoices" returns the amount values directly (Mode A), not passages.
+FIELD_INTENTS = {
+    "amount": ["amount", "total", "price", "cost", "sum", "paid", "payable", "due",
+               "how much", "rupee", "dollar", "rs", "inr", "usd", "₹", "$"],
+    "date": ["date", "when", "due date", "deadline", "day", "dated"],
+    "email": ["email", "e-mail", "mail id", "mail-id"],
+    "phone": ["phone", "mobile", "contact number", "call", "telephone"],
+    "url": ["url", "link", "website", "site", "web address"],
+}
+
+
+def detect_field_intents(query: str) -> list[str]:
+    q = " " + query.lower() + " "
+    hits = [kind for kind, kws in FIELD_INTENTS.items() if any(k in q for k in kws)]
+    return hits
+
+
+def answer_from_fields(conn, query: str, flt: SearchFilter, limit: int = 12) -> list[dict]:
+    """Direct structured answers pulled from extracted fields when the query asks for
+    a known field kind. LLM-free."""
+    kinds = detect_field_intents(query)
+    if not kinds:
+        return []
+    qs = ",".join("?" * len(kinds))
+    sql = ("SELECT f.value, f.kind, f.document_id, d.title FROM fields f "
+           "JOIN documents d ON d.id=f.document_id WHERE f.kind IN (" + qs + ")")
+    params = list(kinds)
+    if flt.doc_id:
+        sql += " AND f.document_id=?"; params.append(flt.doc_id)
+    if flt.file_type:
+        sql += " AND d.file_type=?"; params.append(flt.file_type)
+    sql += " ORDER BY f.id LIMIT ?"; params.append(limit)
+    return [{"value": r[0], "kind": r[1], "document_id": r[2], "document_title": r[3]}
+            for r in conn.execute(sql, params)]
+
+
 def _passes_filter(conn, chunk_ids, flt: SearchFilter):
     if not chunk_ids or (not flt.file_type and not flt.doc_id):
         return set(chunk_ids)

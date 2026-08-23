@@ -176,6 +176,17 @@ textarea.field { resize: vertical; line-height: 1.6; }
 .search-input input:focus { outline: 0; border-color: rgba(242,166,90,.55); box-shadow: 0 0 0 4px rgba(242,166,90,.12); }
 .modepick { margin: 0; }
 .results { margin-top: 24px; display: grid; gap: 12px; }
+.answers { border: 1px solid rgba(95,211,198,.35); border-radius: 16px; padding: 16px 18px;
+  background: radial-gradient(120% 140% at 0% 0%, rgba(95,211,198,.10), transparent 60%), var(--panel);
+  backdrop-filter: blur(12px); animation: cardin .5s var(--ease) both; }
+.answers-h { font: 600 11px "JetBrains Mono", monospace; letter-spacing: .16em; text-transform: uppercase; color: var(--teal); margin-bottom: 12px; }
+.answers-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; }
+.ans { border: 1px solid var(--line); border-radius: 12px; padding: 10px 13px; background: var(--panel); cursor: pointer;
+  transition: border-color .2s, transform .2s var(--ease); display: flex; flex-direction: column; gap: 3px; }
+.ans:hover { border-color: var(--line-strong); transform: translateY(-2px); }
+.ans-kind { font: 500 10px "JetBrains Mono", monospace; color: var(--faint); text-transform: uppercase; letter-spacing: .06em; }
+.ans-val { font-family: "Fraunces", serif; font-weight: 600; font-size: 17px; color: var(--text); word-break: break-word; }
+.ans-src { color: var(--muted); font-size: 12px; }
 .empty, .stage-empty { color: var(--faint); text-align: center; padding: 40px; font-size: 15px; }
 .card { border: 1px solid var(--line); border-radius: 16px; padding: 18px 20px; background: var(--panel);
   backdrop-filter: blur(12px); animation: cardin .55s var(--ease) both; transition: border-color .25s, transform .25s var(--ease); position: relative; overflow: hidden; }
