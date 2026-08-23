@@ -1,7 +1,9 @@
 # Corpora — Design Spec
 
-**Date:** 2026-08-23 (LLD section added 2026-08-24)
-**Status:** Approved (brainstorming complete)
+**Date:** 2026-08-23 (LLD section + research hardening added 2026-08-24)
+**Status:** Approved (brainstorming complete); hardened against a two-sweep
+web-research pass (stack pitfalls + hosting), fact-checked with no
+refutations
 **Type:** Learning/portfolio project
 
 ## 1. Purpose
@@ -95,14 +97,41 @@ parse → chunk → embed → index, updating document status:
   (see §8). Libraries: pypdf, python-docx, python-pptx, openpyxl, stdlib
   csv; md/txt read directly. Adding a format = adding one module plus one
   registry entry.
-- **Chunker:** ~300-token chunks with overlap; each chunk records a
-  location hint (page / slide / sheet + row range). Spreadsheets chunk by
-  row groups with the header row prepended to each chunk. One concrete
-  chunker; prose vs table handling is a branch on the text block's `kind`,
-  not a strategy hierarchy.
-- **Validation:** extension + MIME sniff, size cap (default 25MB), and
-  content-hash dedup (re-upload returns existing doc) all happen in one
-  validation module *before* parser lookup — parsers never validate.
+- **Chunker:** target ~300 tokens **counted in the embedding model's own
+  WordPiece tokenizer**, hard-capped at 450 (headroom under BGE's 512
+  limit). This is load-bearing: fastembed **silently truncates at 512
+  WordPiece tokens** (verified in `preprocessor_utils.py`), and a
+  whitespace/`tiktoken` count runs 1.3–2× lower than WordPiece — worst for
+  numeric table rows, where the tail becomes findable by keyword but
+  invisible to semantic search. The chunker counts with the baked
+  `tokenizer.json` (via the `tokenizers` lib — already a transitive dep,
+  no torch) and asserts the cap as an invariant, never relying on silent
+  truncation. Splitting prefers sentence/paragraph boundaries with small
+  overlap. Each chunk records a location hint (page / slide / sheet + row
+  range). Spreadsheets chunk by **token budget, not fixed row count**,
+  re-prepending the header row to every chunk. One concrete chunker;
+  prose vs table is a branch on the block's `kind`, not a strategy.
+- **Contextual chunk headers (enhancement):** before embedding/indexing,
+  each chunk's text is prefixed with a short context line — document title,
+  plus section heading where the parser captured one (Markdown heading
+  path, DOCX Heading1–3 styles, PPTX slide title). This is the LLM-free
+  half of "contextual retrieval": cheap, and expected to improve
+  cross-document retrieval; the *raw* text is stored separately for
+  snippets/display, and the header is counted inside the 512 budget.
+  Whether it nets positive (it can blur in-document discrimination, and
+  same-title edge inflation is a risk for graph edges) is decided on the
+  eval set (§10); graph-edge embeddings use **passage text without the
+  query instruction** on both sides.
+- **Validation:** size cap (default 25MB, lower for `.xlsx`), **content
+  sniff via `puremagic`** (pure-Python, no libmagic; docx/xlsx/pptx are
+  ZIPs that naive sniffers report as `application/zip`, so a renamed
+  `.zip` must be rejected here, not by the parser), **decompression-bomb
+  limits** for OOXML/zip formats (cap total uncompressed size, per-entry
+  ratio, entry count, and reject an oversized `sharedStrings.xml` before
+  openpyxl loads it — verified: a <25MB xlsx can need >1GB RAM), and
+  content-hash dedup (re-upload returns the existing doc, surfaced
+  explicitly as "duplicate"). All of this runs in one validation module
+  *before* parser lookup — parsers never validate.
 - **Partial success allowed:** unreadable pages are skipped and recorded
   in `ParsedDoc.warnings`; parsers raise only on total extraction failure,
   using a typed error taxonomy (§8).
@@ -121,22 +150,40 @@ parse → chunk → embed → index, updating document status:
 
 - `documents` — id, filename, title, file_type, size, status, error,
   warnings, content_hash, uploaded_at
-- `chunks` — id, document_id, seq, text, location hint
-- `chunks_fts` — FTS5 virtual table over chunk text
-- `chunk_vectors` — sqlite-vec table, 384-dim embeddings
+- `chunks` — `id INTEGER PRIMARY KEY` (rowid alias, required by
+  external-content FTS), document_id, seq, text (raw, for snippets),
+  location hint. Chunks are immutable: insert-once, delete-by-document.
+- `chunks_fts` — FTS5 **external-content** table
+  (`content='chunks', content_rowid='id'`), so text isn't duplicated;
+  tokenizer `porter unicode61` for stemming ("running" matches "run").
+  Kept in sync by AFTER INSERT / AFTER DELETE triggers on `chunks` (no
+  UPDATE trigger — chunks are immutable). Contentless (`content=''`) is
+  rejected: it makes `snippet()`/`highlight()` return NULL.
+- `chunk_vectors` — sqlite-vec `vec0` table declared
+  **`embedding float[384] distance_metric=cosine`** (vec0 defaults to L2;
+  because BGE vectors are L2-normalized, the wrong metric passes every
+  ordering test while corrupting absolute scores → wrong graph edge
+  weights).
 - `similarity_edges` — precomputed top-k nearest-neighbor chunk pairs
   across different documents (powers the graph; refreshed on ingest)
-- `meta` — embedding model name and dimension recorded at first index;
-  checked by the startup self-check (a mismatch with `EMBED_MODEL` means
-  stored vectors are invalid → refuse to start with a clear message
-  pointing at the re-index path)
+- `meta` — **embedding artifact identity**, not just a name: model name,
+  dim, `fastembed` version, and a SHA-256 of the loaded ONNX file, plus
+  the `sqlite-vec` version. Checked by the startup self-check; any
+  mismatch with the running environment means stored vectors are
+  incompatible → refuse to start with a clear message pointing at the
+  re-index path. (Name alone is insufficient: fastembed ships a
+  *quantized* `bge-small-en-v1.5` artifact and has changed a model's
+  embeddings in-place across versions without changing its name.)
 
-Migrations run automatically at startup. **Deletion integrity:** FTS5 and
-sqlite-vec virtual tables ignore foreign-key cascades, so
-`DELETE /documents/{id}` removes rows from `chunks`, `chunks_fts`,
-`chunk_vectors`, and `similarity_edges` (both directions) in a single
-transaction, plus the original file — centralized in one function and
-covered by an API test.
+Migrations run automatically at startup. **Deletion integrity:** sqlite-vec
+tables ignore foreign-key cascades, so `DELETE /documents/{id}` explicitly
+removes `chunk_vectors` and `similarity_edges` (both directions) rows;
+`chunks_fts` is kept consistent by the AFTER DELETE trigger on `chunks`
+(deleting external-content FTS rows with the wrong text corrupts the index
+into "database disk image is malformed" at query time — the trigger makes
+this un-forgettable). All of it plus the original file happens in one
+transaction, centralized in one function, covered by an API test that also
+runs the FTS5 `'integrity-check'` command afterward.
 
 **Connection semantics (pinned in Phase 1):** WAL mode, `busy_timeout`
 set, and a per-thread connection policy — a background ingestion thread
@@ -194,10 +241,32 @@ a `none` no-op. Selected once in the composition root from
 
 - **keyword** — FTS5 BM25; quoted phrases, AND/OR. Plus structured
   filters: file type, date range, specific document. ("Defined queries.")
-- **semantic** — embed query via fastembed, cosine top-k, filters applied
-  post-retrieval with over-fetch (no filter pushdown into the vector
-  index; at our scale this is milliseconds).
-- **hybrid (default)** — both, merged with RRF. ("Natural language.")
+  The raw user string is **sanitized before it reaches `MATCH`**, not just
+  wrapped in a try/except: many inputs (`state-of-the-art`, `cats NOT
+  dogs`, `c++`, `"unbalanced`, `col:term`) either raise heterogeneous
+  `OperationalError`s or execute with silently-wrong operator semantics.
+  The sanitizer (Datasette-style) preserves quoted phrases and top-level
+  uppercase AND/OR, double-quotes every other token, and drops zero-token
+  phrases; a fully-quoted retry is the last-resort backstop. `bm25()` is
+  negative-is-better, so the index uses `ORDER BY rank` (never `bm25()
+  DESC`) and normalizes to the higher-is-better `ScoredChunk` contract in
+  exactly one place — the same score-direction discipline as the vector
+  leg, with the same Phase-1 ordering test.
+- **semantic** — embed the query with the **query instruction** (see §8.1
+  `Embedder`), cosine top-k, filters applied post-retrieval with
+  over-fetch (no filter pushdown into the vector index; at our scale this
+  is milliseconds).
+- **hybrid (default)** — both, merged with RRF (`k=60`, a named constant;
+  validated default, no tuning). **Fusion depth:** each leg fetches its
+  top `FUSION_DEPTH` (~100) candidates, `rrf()` fuses the full lists, then
+  `offset`/`limit` slices the fused result. Pushing pagination into the
+  legs would fuse page 2 from a different candidate set than page 1
+  (results repeat/vanish across pages); results beyond `FUSION_DEPTH` are
+  simply unreachable by pagination (fine at this scale). The dense leg
+  always returns k neighbors even for an exact-ID query with no semantic
+  match, so the exposed **keyword mode is the escape hatch** for
+  precision — not a raw-cosine threshold (BGE scores concentrate in
+  ~[0.6, 1.0] and don't support absolute cutoffs).
 
 Retrieval is an importable service function — not logic inside the HTTP
 handler — because three consumers share it: `GET /search`, `GET /graph?q=`,
@@ -224,7 +293,11 @@ prompt machinery exists in v1.
 - `GET /graph` — Cytoscape-ready JSON: document nodes (sized by chunk
   count, colored by file type) + chunk nodes (collapsed by default) +
   similarity edges. `GET /graph?q=...` additionally marks matching nodes
-  with scores.
+  with scores. **Edge thickness is rescaled within the corpus's observed
+  similarity range, not mapped from raw cosine** (BGE scores cluster in
+  ~[0.6, 1.0], so raw-proportional thickness looks uniform), and edges
+  below a calibrated floor are pruned so unrelated documents don't all
+  connect via top-k.
 - `GET /graph/export` — portable GraphML/JSON export (Gephi-compatible).
 - `POST /answer` — 501 stub (LLM slot).
 - `GET /healthz`.
@@ -302,26 +375,44 @@ by both retrieval and graph-edge computation. **Score-direction trap
 `SqliteVecIndex` and nowhere else. RRF only sees ranks, so an inverted
 semantic leg would look plausible while ranking backwards — which is why
 a shared **contract-test suite parametrized over both implementations**
-(same scoring semantics, ordering, ties, empty-index, delete behavior)
-exists from Phase 1. The fallback promise is only real if both are green
-on the same behavioral tests the day the lever gets pulled. Future
-`PgVectorIndex` joins the same suite. No filter parameter in the port —
-semantic filters are post-applied with over-fetch (retrofit later is a
-small in-repo diff, not a migration).
+exists from Phase 1. It pins not just ordering but **score *values* within
+tolerance** (identical vectors → 1.0, orthogonal → 0.0) — because L2 vs
+cosine agree on order for normalized vectors but diverge on value, so an
+ordering-only suite would pass while graph edge weights differ by impl.
+It also includes a **churn test** (insert → delete document → re-insert →
+search returns only fresh vectors), which is exactly sqlite-vec's
+historically buggiest path. `SqliteVecIndex` uses the `WHERE embedding
+MATCH :v AND k = :k` form (never `LIMIT`, which needs SQLite ≥3.41) and
+never joins hydration onto the `MATCH` (a documented vec0 failure);
+`sqlite-vec` is pinned `==0.1.9`. Future `PgVectorIndex` joins the same
+suite. No filter parameter in the port — semantic filters are
+post-applied with over-fetch (retrofit later is a small in-repo diff).
 
-**`Embedder`** — one real implementation; the seam exists for tests.
+**`Embedder`** — one real implementation; the seam exists for tests **and
+for the query/passage asymmetry** BGE needs.
 
 ```python
 class Embedder(Protocol):
     dim: int
-    def embed(self, texts: Sequence[str]) -> list[list[float]]: ...
+    def embed_passages(self, texts: Sequence[str]) -> list[list[float]]: ...
+    def embed_query(self, text: str) -> list[float]: ...
 ```
 
-`FastembedEmbedder` (bge-small-en-v1.5) plus a deterministic
-`FakeEmbedder` in tests: the ~200MB ONNX model must never load in unit
+The split is not cosmetic: BGE is trained asymmetrically, and
+**fastembed's `query_embed`/`passage_embed` are no-ops for BGE** (verified
+in source — plain pass-throughs to `embed`), so the query instruction
+("Represent this sentence for searching relevant passages: ") must be
+prepended by us, on the query path only. `FastembedEmbedder.embed_query`
+adds the prefix; `embed_passages` adds nothing; **graph-edge computation
+uses `embed_passages` on both sides.** (v1.5 degradation without the
+instruction is "slight" per the model card, so the prefix is validated on
+the eval set and is one line to toggle — but the *seam* must exist now, or
+flipping it later means a full re-index.) `FakeEmbedder` mirrors both
+methods deterministically; the ~200MB ONNX model must never load in unit
 tests. The real model is constructed only in the composition root (never
-at module import, never lazily in a route) — which is also what makes the
-§9 fail-fast startup check possible.
+at import, never lazily in a route), loaded offline via
+`specific_model_path` with a fixed `EMBED_THREADS`, which is also what
+makes the §9 fail-fast startup check possible.
 
 **`SnapshotBackend`** — added when persistence became v1 scope (§4.1);
 two real implementations plus a test fake.
@@ -391,8 +482,9 @@ Two disciplines with no pattern name, both load-bearing:
   — verified per format by fixture tests.
 - **I** — interfaces sized to their callers: `Parser` is `parse()` only;
   `VectorIndex` is add/search/delete — it is not forced to fake BM25 or
-  filters; `Embedder` is `dim` + `embed`. No fat `SearchBackend` or
-  `Store` interface bundling FTS + vectors + documents.
+  filters; `Embedder` is `dim` + `embed_passages`/`embed_query`;
+  `SnapshotBackend` is coarse blob put/get/exists. No fat `SearchBackend`
+  or `Store` interface bundling FTS + vectors + documents.
 - **D** — pipeline, search service, and edge computation import only
   Protocols and shared dataclasses; concretions (pypdf, fastembed,
   sqlite-vec, numpy) are each imported in exactly one leaf module and
@@ -427,11 +519,17 @@ frozen dataclass).
   empty text, unsupported content) and marks the document `failed`.
 - Scanned/image-only PDFs raise `NoExtractableTextError` → "no extractable
   text (needs OCR)".
-- Invalid FTS5 query syntax falls back to a plain-term query inside
-  `Fts5Index`; searches never 500 on user input.
+- User query strings are sanitized (not just try/excepted) inside
+  `Fts5Index`; searches never 500 on user input (§5).
 - Startup self-check = the composition root: migrations applied, embedding
-  model loads (fail fast), FTS5 available, sqlite-vec probe result logged,
-  stored embedding model/dim matches `EMBED_MODEL`.
+  model loads offline & fail-fast, FTS5 available, **runtime
+  `sqlite_version` logged and the sqlite-vec probe fails over to numpy if
+  <3.41 or the extension can't load** (the probe catches both
+  `AttributeError` — no `enable_load_extension` on some builds, common on
+  macOS — and `OperationalError`; extension loading lives in the
+  per-connection factory), and the stored embedding artifact identity
+  (name + dim + fastembed version + ONNX file hash) matches the running
+  environment.
 - **Interrupted-ingestion recovery:** on the ephemeral free tier a restart
   can kill an in-flight ingestion, and an OOM kill is not a catchable
   `ParseError`. At startup, any document still in `processing` is marked
@@ -446,21 +544,39 @@ frozen dataclass).
   image-only fixtures).
 - **Vector contract suite:** one parametrized behavioral suite run against
   `SqliteVecIndex` *and* `NumpyVectorIndex` from Phase 1 (sqlite-vec *is*
-  a test dependency). Pins cosine-similarity/higher-is-better ordering —
-  the score-direction trap — before the fallback is ever needed.
+  a test dependency). Pins score *values* (identical→1.0, orthogonal→0.0),
+  higher-is-better ordering, and a churn test (insert→delete→re-insert) —
+  the score-direction and delete traps — before the fallback is needed.
 - **Chunker tests:** boundaries, overlap, table row-grouping, location
-  hints.
+  hints, and a **512-budget invariant** with a dense-numeric XLSX fixture
+  (header + widest row stays under the WordPiece cap) plus a semantic test
+  that retrieves content from the *last* row of a row-group chunk.
+- **FTS5 sanitizer tests** (table-driven): hyphenated term, `c++`,
+  unbalanced quote, `NOT`/caret/colon/star, punctuation-only, empty query.
 - **Search integration tests:** in-memory SQLite; ingest fixtures; assert
-  known queries return expected chunks per mode; `rrf()` unit-tested
-  directly as a pure function. Semantic tests assert rank presence, not
-  exact scores. Fakes (`FakeEmbedder`) injected via `create_app` /
-  `dependency_overrides` — no monkeypatching.
+  known queries return expected chunks per mode; `rrf()` unit-tested as a
+  pure function; **page-1/page-2 consistency** under RRF; query-path
+  embedding differs from passage-path for the same string. Fakes
+  (`FakeEmbedder`) injected via `create_app` / `dependency_overrides`.
+- **Eval harness** (`tests/eval/`, ships with hybrid search): a committed
+  gold set (`queries.jsonl`, ~30–50 query→relevant-chunk labels, grown
+  over time) and a ~30-line numpy metrics module computing **recall@10 and
+  MRR per mode** (keyword/semantic/hybrid). CI-gated with loose thresholds
+  (a flaky gate gets disabled — worse than none), plus a comparison script
+  for A/Bs. This is the arbiter for the query-instruction, contextual-
+  header, and chunk-size decisions — none of which are guessed.
 - **API tests** (FastAPI TestClient): upload → status `ready` (background
   tasks run synchronously under TestClient) → search → graph; failure
-  paths (bad file, oversized, duplicate, bad query); single-transaction
-  delete leaves no ghost rows in any of the four tables.
-- **One real-model, real-sqlite-vec test runs inside the Docker image** —
-  the steel-thread proof; it cannot be faked away.
+  paths (bad file, oversized, **renamed-zip-as-docx**, **zip-bomb
+  fixture**, owner-password vs user-password PDF, duplicate, bad query);
+  single-transaction delete leaves no ghost rows and passes the FTS5
+  `'integrity-check'`.
+- **Persistence tests:** `LocalSnapshotBackend` snapshot→wipe→restore
+  round-trip; boot-restore installs the DB before serving; interrupted-
+  `processing` doc is marked `failed` on startup.
+- **One real-model, real-sqlite-vec test runs inside the Docker image with
+  `--network none`** — the steel-thread proof of both the sqlite-vec
+  integration and the offline-boot promise; it cannot be faked away.
 - **`:memory:` footgun:** in-memory SQLite is per-connection; tests use
   one shared connection (or `file::memory:?cache=shared`) handed out by
   the injected connection factory. This workaround never leaks into
@@ -501,8 +617,9 @@ corpora/
 │   ├── persistence/       # SnapshotBackend impls, VACUUM-INTO snapshot, restore-on-boot hooks
 │   └── db.py              # SQLite schema, migrations, WAL/busy_timeout, transactional delete
 ├── static/                # index.html, app.js, styles.css, cytoscape
-├── tests/  (+ fixtures/, contracts/)
-├── Dockerfile             # single stage, slim (Debian/glibc), model baked in, UID-1000 user
+├── tests/  (+ fixtures/, contracts/, eval/ [queries.jsonl + metrics])
+├── Dockerfile             # slim Debian/glibc (never Alpine — no musl wheels), trixie/SQLite≥3.41,
+│                          # model baked at EMBED_MODEL_PATH, UID-1000 user; multi-arch amd64+arm64
 ├── docker-compose.yml     # local run with data volume
 └── README.md
 ```
@@ -526,6 +643,16 @@ beyond what's specified:
   contract suite; the rest is an intentional rewrite exercise.
 - **Auth** — router-level `Depends` added in `create_app` + a migration
   adding owner columns; no placeholder user model in v1.
+- **CPU cross-encoder reranking** — a small ONNX reranker
+  (`ms-marco-MiniLM-L-6-v2`, ~80MB) over the top fused hits; deferred
+  because `bge-reranker-base` (1GB) breaks the 512MB budget and the eval
+  harness must first show hybrid alone is insufficient.
+- **Small-to-big retrieval** — expand a hit with its neighbor chunks via
+  `(document_id, seq)` and merge adjacent hits into segments; pure
+  post-processing over existing data, added only if the eval set warrants.
+- **CJK / unsegmented-script keyword search** — `unicode61` doesn't
+  segment CJK; a different FTS5 tokenizer is a schema-time change, out of
+  scope for an English-first v1.
 
 (Persistence on ephemeral hosts was promoted from this list into v1 — see
 §4.1. A future `SnapshotBackend` for a non-S3 store, e.g. HF Datasets, is
