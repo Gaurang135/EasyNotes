@@ -3,19 +3,44 @@ from pathlib import Path
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from app.settings import Settings
+from app import db
+from app.ingest.parsers import PARSERS
+from app.ingest.chunker import make_token_counter
+from app.ingest.pipeline import IngestionPipeline
+from app.search.vectors import make_vector_index
+from app.search.fts import Fts5Index
+from app.search.embeddings import FastembedEmbedder
+from app.api import documents, search
 
 
-def create_app(settings: Settings | None = None) -> FastAPI:
+def create_app(settings: Settings | None = None, *, embedder=None) -> FastAPI:
     settings = settings or Settings.from_env()
-    Path(settings.data_dir).mkdir(parents=True, exist_ok=True)
+    data_dir = Path(settings.data_dir)
+    data_dir.mkdir(parents=True, exist_ok=True)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
+        conn = db.connect(str(data_dir / "easynotes.db"))
+        db.init_schema(conn)
+        db.mark_interrupted(conn)
+        conn.execute("INSERT OR REPLACE INTO meta(key,value) VALUES('data_dir',?)",
+                     (str(data_dir),))
+        conn.commit()
         app.state.settings = settings
-        # later tasks wire db, embedder, indexes, pipeline, persistence here
+        app.state.conn = conn
+        app.state.parsers = PARSERS
+        app.state.embedder = embedder or FastembedEmbedder(settings)
+        app.state.vector_index = make_vector_index(conn)
+        app.state.fts_index = Fts5Index(conn)
+        app.state.pipeline = IngestionPipeline(
+            conn, PARSERS, make_token_counter(settings),
+            app.state.embedder, app.state.vector_index)
         yield
+        conn.close()
 
     app = FastAPI(title="EasyNotes", lifespan=lifespan)
+    app.include_router(documents.router)
+    app.include_router(search.router)
 
     @app.get("/healthz")
     def healthz() -> dict:
