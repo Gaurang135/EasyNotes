@@ -1,4 +1,9 @@
-# Corpora — Design Spec
+# EasyNotes — Design Spec
+
+**Name:** EasyNotes — "dump any file, find it in plain English." Chosen
+2026-08-24 for a friendly, low-friction personal feel. Note: despite
+"notes," it ingests PDFs, spreadsheets, and slides too — the tagline and
+UI make "any file" explicit so the name doesn't undersell the scope.
 
 **Date:** 2026-08-23 (LLD section + research hardening added 2026-08-24)
 **Status:** Approved (brainstorming complete); hardened against a two-sweep
@@ -233,7 +238,7 @@ scaling is a hard non-goal, not just a scale limit.
 S3-compatible implementation (one boto3-based impl serves R2, Backblaze
 B2, Tigris, MinIO), a `local` directory implementation for dev/tests, and
 a `none` no-op. Selected once in the composition root from
-`SNAPSHOT_BACKEND`. When `none`, Corpora runs purely local.
+`SNAPSHOT_BACKEND`. When `none`, EasyNotes runs purely local.
 
 ## 5. Search
 
@@ -606,7 +611,7 @@ none` offline-boot test).
 ## 12. Project layout
 
 ```
-corpora/
+easynotes/
 ├── app/
 │   ├── main.py            # create_app() composition root + lifespan self-check
 │   ├── models.py          # frozen dataclasses: ParsedDoc, TextBlock, Chunk, ScoredChunk, SearchHit
