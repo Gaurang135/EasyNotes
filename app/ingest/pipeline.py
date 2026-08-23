@@ -1,6 +1,5 @@
 from __future__ import annotations
 import logging
-import threading
 from pathlib import Path
 from app import db
 from app.models import Status
@@ -8,10 +7,6 @@ from app.errors import ParseError
 from app.ingest.validation import check_archive_safety
 
 log = logging.getLogger("easynotes.pipeline")
-
-# One process, one SQLite connection, single-writer by design: serialize ingests so
-# concurrent background tasks never use the shared connection at the same time.
-_INGEST_LOCK = threading.Lock()
 
 
 class IngestionPipeline:
@@ -26,10 +21,7 @@ class IngestionPipeline:
         self.db_path = db_path
 
     def ingest(self, document_id: int) -> None:
-        with _INGEST_LOCK:
-            self._ingest(document_id)
-
-    def _ingest(self, document_id: int) -> None:
+        # Serialized by the single-worker ingest queue (single-writer by design).
         from app.ingest.chunker import chunk_document
         row = self.conn.execute(
             "SELECT filename, title, file_type FROM documents WHERE id=?",

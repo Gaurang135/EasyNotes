@@ -18,6 +18,7 @@ class Settings:
     snapshot_access_key: str | None = None
     snapshot_secret_key: str | None = None
     snapshot_interval_s: int = 300
+    ingest_mode: str = "threaded"            # threaded (worker) | inline (synchronous, tests)
 
     @staticmethod
     def from_env(overrides: dict | None = None) -> "Settings":
@@ -39,4 +40,5 @@ class Settings:
             snapshot_access_key=g("SNAPSHOT_ACCESS_KEY") or None,
             snapshot_secret_key=g("SNAPSHOT_SECRET_KEY") or None,
             snapshot_interval_s=int(g("SNAPSHOT_INTERVAL_S", "300")),
+            ingest_mode=g("INGEST_MODE", "threaded"),
         )

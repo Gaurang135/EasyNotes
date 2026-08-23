@@ -3,6 +3,16 @@
 A running log of *why* things are the way they are. Newest first.
 Format: date · decision · reason · alternatives rejected.
 
+## 2026-08-24 — Ingestion: single-worker queue + thread-local SQLite connections
+A burst of ~75 concurrent uploads exposed two bugs: (1) fire-and-forget FastAPI
+BackgroundTasks starved/dropped a task under threadpool pressure; (2) one shared
+sqlite3 connection used from the worker + request threads raised "bad parameter or
+other API misuse" (and 500s). Fix: a single-writer ingest queue (threaded worker in
+prod, inline in tests) so every doc is processed once in order, and a ThreadLocalConn
+proxy so each thread gets its own connection (WAL allows concurrent connections).
+Verified: 80-file concurrent burst fully drains, 0 stuck, 0 500s. Pending docs are
+re-enqueued on startup for crash recovery.
+
 ## 2026-08-24 — fastembed offline loading: HF_HUB_OFFLINE + cache_dir (not specific_model_path)
 Discovered during the Docker build: `specific_model_path` does NOT bypass
 fastembed 0.5.x's network-first check, so an offline container still tried to

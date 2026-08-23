@@ -2,7 +2,7 @@ from __future__ import annotations
 import json
 from datetime import datetime, timezone
 from pathlib import Path
-from fastapi import APIRouter, UploadFile, File, BackgroundTasks, Depends, HTTPException
+from fastapi import APIRouter, UploadFile, File, Depends, HTTPException
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from app import db
@@ -33,7 +33,7 @@ def _create_row(state, filename, title, file_type, size, chash) -> int:
 
 
 @router.post("/documents", status_code=201)
-def upload(background: BackgroundTasks, file: UploadFile = File(...), state=Depends(get_state)):
+def upload(file: UploadFile = File(...), state=Depends(get_state)):
     originals = Path(state.settings.data_dir) / "originals"
     originals.mkdir(parents=True, exist_ok=True)
     tmp = originals / f"_tmp_{file.filename}"
@@ -55,12 +55,12 @@ def upload(background: BackgroundTasks, file: UploadFile = File(...), state=Depe
     title = (file.filename or "untitled").rsplit(".", 1)[0]
     doc_id = _create_row(state, file.filename, title, ftype, tmp.stat().st_size, chash)
     tmp.rename(originals / f"{doc_id}_{file.filename}")
-    background.add_task(state.pipeline.ingest, doc_id)
+    state.ingest.enqueue(doc_id)
     return {"id": doc_id, "status": "pending"}
 
 
 @router.post("/documents/text", status_code=201)
-def paste(body: PasteText, background: BackgroundTasks, state=Depends(get_state)):
+def paste(body: PasteText, state=Depends(get_state)):
     originals = Path(state.settings.data_dir) / "originals"
     originals.mkdir(parents=True, exist_ok=True)
     data = body.text.encode()
@@ -71,7 +71,7 @@ def paste(body: PasteText, background: BackgroundTasks, state=Depends(get_state)
         return {"id": existing[0], "status": "duplicate"}
     doc_id = _create_row(state, f"{body.title}.txt", body.title, "txt", len(data), chash)
     (originals / f"{doc_id}_{body.title}.txt").write_bytes(data)
-    background.add_task(state.pipeline.ingest, doc_id)
+    state.ingest.enqueue(doc_id)
     return {"id": doc_id, "status": "pending"}
 
 

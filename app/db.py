@@ -1,6 +1,7 @@
 from __future__ import annotations
 import logging
 import sqlite3
+import threading
 
 log = logging.getLogger("easynotes.db")
 EMBED_DIM = 384
@@ -94,6 +95,42 @@ def connect(path: str) -> sqlite3.Connection:
     conn.execute("PRAGMA foreign_keys=ON")
     conn.vec_available = _load_vec(conn)
     return conn
+
+
+class ThreadLocalConn:
+    """Proxy that hands each thread its own real connection to the same DB file.
+
+    One shared sqlite3 connection used concurrently from the ingest worker + request
+    threads raises 'bad parameter or other API misuse'. WAL allows many connections,
+    so each thread lazily gets its own; all `.execute/.commit/…` calls forward to it,
+    leaving every existing call site (`conn.execute(...)`) unchanged.
+    """
+    def __init__(self, path: str):
+        self._path = path
+        self._local = threading.local()
+        self._all: list[sqlite3.Connection] = []
+
+    def _c(self) -> sqlite3.Connection:
+        c = getattr(self._local, "c", None)
+        if c is None:
+            c = connect(self._path)
+            self._local.c = c
+            self._all.append(c)
+        return c
+
+    @property
+    def vec_available(self) -> bool:
+        return bool(getattr(self._c(), "vec_available", False))
+
+    def __getattr__(self, name):
+        return getattr(self._c(), name)
+
+    def close_all(self) -> None:
+        for c in self._all:
+            try:
+                c.close()
+            except Exception:
+                pass
 
 
 def sqlite_vec_available(path: str) -> bool:

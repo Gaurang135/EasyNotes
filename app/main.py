@@ -8,6 +8,7 @@ from app import db
 from app.ingest.parsers import PARSERS
 from app.ingest.chunker import make_token_counter
 from app.ingest.pipeline import IngestionPipeline
+from app.ingest.queue import make_ingest_queue
 from app.search.vectors import make_vector_index
 from app.search.fts import Fts5Index
 from app.search.embeddings import FastembedEmbedder
@@ -26,7 +27,7 @@ def create_app(settings: Settings | None = None, *, embedder=None) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         restore_on_boot(backend, db_path)          # ephemeral-tier durability
-        conn = db.connect(db_path)
+        conn = db.ThreadLocalConn(db_path)          # per-thread connections (worker + requests)
         db.init_schema(conn)
         db.mark_interrupted(conn)
         conn.execute("INSERT OR REPLACE INTO meta(key,value) VALUES('data_dir',?)",
@@ -44,11 +45,17 @@ def create_app(settings: Settings | None = None, *, embedder=None) -> FastAPI:
             conn, PARSERS, make_token_counter(settings),
             app.state.embedder, app.state.vector_index,
             backend=pipeline_backend, db_path=db_path)
+        app.state.ingest = make_ingest_queue(settings.ingest_mode, app.state.pipeline)
+        app.state.ingest.start()
+        # recover any documents left 'pending' by a crash/restart (never dropped)
+        for (doc_id,) in conn.execute("SELECT id FROM documents WHERE status='pending'").fetchall():
+            app.state.ingest.enqueue(doc_id)
         yield
+        app.state.ingest.stop()
         try:
             snapshot_db(conn, backend, db_path)     # final snapshot on shutdown
         finally:
-            conn.close()
+            conn.close_all()
 
     app = FastAPI(title="EasyNotes", lifespan=lifespan)
     app.include_router(documents.router)
