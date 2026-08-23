@@ -103,26 +103,31 @@ $("#paste-submit").addEventListener("click", async () => {
 /* ---------- library ---------- */
 const EXT = { pdf: "pdf", docx: "doc", pptx: "ppt", xlsx: "xls", csv: "csv", md: "md", txt: "txt" };
 let pollTimer = null;
+let recentSig = "";
 async function loadRecent() {
   let docs = []; try { docs = await (await fetch("/documents")).json(); } catch { return; }
   $("#lib-count").textContent = docs.length ? `${docs.length} item${docs.length > 1 ? "s" : ""}` : "";
-  $("#recent").innerHTML = docs.map((d, i) => `
-    <li data-doc="${d.id}" style="animation-delay:${Math.min(i * 40, 400)}ms">
-      <span class="doc-name"><span class="ext">${EXT[d.file_type] || d.file_type}</span>${esc(d.title)}</span>
-      <span class="doc-actions">
-        <span class="pill ${d.status}">${d.status}${d.error ? " · " + esc(d.error) : ""}</span>
-        <a class="iconbtn" href="/documents/${d.id}/download" title="Download original" download onclick="event.stopPropagation()">↓</a>
-        <button class="iconbtn del" data-del="${d.id}" title="Delete" onclick="event.stopPropagation()">✕</button>
-      </span></li>`).join("")
-    || `<li><span style="color:var(--faint)">Nothing yet — drop a file above.</span></li>`;
-  $$("#recent li[data-doc]").forEach((el) => el.addEventListener("click", () => openDetail(el.dataset.doc)));
-  $$("#recent .del").forEach((b) => b.addEventListener("click", async () => {
-    await fetch(`/documents/${b.dataset.del}`, { method: "DELETE" });
-    toast("Deleted", ""); loadRecent(); loadStats();
-  }));
+  const sig = docs.map((d) => d.id + d.status + (d.error || "")).join("|");
+  if (sig !== recentSig) {                            // only re-render on real change — no flicker on poll
+    recentSig = sig;
+    $("#recent").innerHTML = docs.map((d) => `
+      <li data-doc="${d.id}">
+        <span class="doc-name"><span class="ext">${EXT[d.file_type] || d.file_type}</span>${esc(d.title)}</span>
+        <span class="doc-actions">
+          <span class="pill ${d.status}">${d.status}${d.error ? " · " + esc(d.error) : ""}</span>
+          <a class="iconbtn" href="/documents/${d.id}/download" title="Download original" download onclick="event.stopPropagation()">↓</a>
+          <button class="iconbtn del" data-del="${d.id}" title="Delete" onclick="event.stopPropagation()">✕</button>
+        </span></li>`).join("")
+      || `<li><span style="color:var(--faint)">Nothing yet — drop a file above.</span></li>`;
+    $$("#recent li[data-doc]").forEach((el) => el.addEventListener("click", () => openDetail(el.dataset.doc)));
+    $$("#recent .del").forEach((b) => b.addEventListener("click", async () => {
+      await fetch(`/documents/${b.dataset.del}`, { method: "DELETE" });
+      recentSig = ""; toast("Deleted", ""); loadRecent(); loadStats();
+    }));
+  }
   const busy = docs.some((d) => d.status === "processing" || d.status === "pending");
   clearTimeout(pollTimer);
-  if (busy) pollTimer = setTimeout(() => { loadRecent(); loadStats(); }, 1400);
+  if (busy) pollTimer = setTimeout(loadRecent, 1600);
 }
 
 /* ---------- search ---------- */
@@ -207,12 +212,14 @@ async function loadOverview() {
   }
   box.innerHTML = `<div class="overview-h">Your library — extracted into structured data</div>` +
     ready.map((d, i) => {
-      const chips = d.fields.slice(0, 5).map((f) =>
+      let chips = "";
+      if (d.table_count) chips += `<span class="ochip ochip-t">▦ ${d.table_count} table${d.table_count > 1 ? "s" : ""}</span>`;
+      chips += d.fields.slice(0, 5).map((f) =>
         `<span class="ochip"><span class="ock">${f.kind}</span>${esc(f.value)}</span>`).join("");
       const badge = `${d.field_count} field${d.field_count !== 1 ? "s" : ""}${d.table_count ? ` · ${d.table_count} table${d.table_count !== 1 ? "s" : ""}` : ""}`;
       return `<article class="ocard" data-doc="${d.id}" style="animation-delay:${Math.min(i * 45, 400)}ms">
         <div class="ohead"><span class="ext">${EXT[d.file_type] || d.file_type}</span><span class="otitle">${esc(d.title)}</span><span class="obadge">${badge}</span></div>
-        ${chips ? `<div class="ochips">${chips}</div>` : `<div class="ochips muted">structured as searchable text</div>`}
+        ${chips ? `<div class="ochips">${chips}</div>` : `<div class="ochips muted">indexed for semantic &amp; keyword search</div>`}
       </article>`;
     }).join("");
   $$("#results .ocard").forEach((el) => el.addEventListener("click", () => openDetail(el.dataset.doc)));
