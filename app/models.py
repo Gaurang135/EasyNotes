@@ -23,10 +23,28 @@ class TextBlock:
 
 
 @dataclass(frozen=True)
+class Table:
+    """A structured table extracted from a document (Mode A: precise/defined queries)."""
+    name: str                       # sheet name / "CSV" / "Table 1"
+    columns: list[str]
+    rows: list[list[str]]           # raw string cells, row-major
+    location: LocationHint | None = None
+
+
+@dataclass(frozen=True)
+class Field:
+    """A key-value fact extracted from document text (billme-style config-driven)."""
+    key: str
+    value: str
+    kind: str                       # date | amount | email | phone | url | pair
+
+
+@dataclass(frozen=True)
 class ParsedDoc:
     text_blocks: list[TextBlock]
     metadata: dict[str, str]
     warnings: list[str] = field(default_factory=list)
+    tables: list[Table] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
