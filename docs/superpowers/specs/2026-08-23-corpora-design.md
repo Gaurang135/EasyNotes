@@ -14,23 +14,31 @@ similarity graph of the corpus.
 
 **Explicitly LLM-free.** The system is the retrieval half of a RAG
 architecture with no generation stage: zero per-query cost, fully
-self-hosted, deployable to free hosting tiers. A clearly marked extension
-slot exists for adding LLM answer-synthesis later.
+self-hosted. A clearly marked extension slot exists for adding LLM
+answer-synthesis later.
 
 ### Goals
 - Learn every layer of a document ingestion + retrieval system by building
   it (no LlamaIndex/LangChain).
-- Runnable locally with `docker run`; deployable unchanged to a free tier
-  (HF Spaces, Oracle free VM, Render) later.
-- Zero external services, zero per-query cost.
+- Runnable locally with `docker run`.
+- **Deployable durably at $0.** Target: Render free web service +
+  snapshot/restore to free object storage (Cloudflare R2). The free tier's
+  ephemeral disk is wiped on every 15-min idle spin-down, deploy, and
+  arbitrary restart, so durability comes from the §4.1 snapshot/restore
+  adapter, which is **v1 scope, not a future extension**. The same image
+  also runs on a paid host with a native disk (Render Starter + disk,
+  Oracle free VM) with the adapter simply disabled.
+- Zero per-query cost; the only running dependency is an S3-compatible
+  object store used for snapshots (R2's free tier: 10 GB, free egress).
 
 ### Non-goals (v1)
 - No LLM / answer generation (extension slot only).
 - No auth / multi-user (single-user; stated decision, not oversight).
 - No OCR for scanned PDFs (listed extension).
 - No entity-level knowledge graph (similarity graph only; listed extension).
-- No horizontal scaling; corpus scale target is hundreds to a few thousand
-  documents.
+- No horizontal scaling. Corpus scale target is hundreds to a few thousand
+  documents. **The snapshot/restore design assumes exactly one writer
+  instance** — a hard invariant on the free tier, not merely a scale limit.
 
 ## 2. Architecture
 
@@ -57,12 +65,23 @@ Upload (file or pasted text)
 | Hybrid ranking | Reciprocal Rank Fusion | Simple, no weight tuning |
 | Ingestion execution | FastAPI BackgroundTasks in thread executor | Single process; ONNX releases the GIL |
 | UI | Static HTML/JS + Cytoscape.js, served by FastAPI | No build step; tiny image |
-| Config | Env vars only (`DATA_DIR`, `MAX_UPLOAD_MB`, `EMBED_MODEL`) | Same image everywhere |
+| Durability | Snapshot/restore to S3-compatible object store (R2) | Only $0-durable option on an ephemeral free tier; §4.1 |
+| Config | Env vars only (see below) | Same image everywhere |
 
-The embedding model is baked into the Docker image so first boot needs no
-internet. The SQLite database file lives under `DATA_DIR` alongside the
-original documents, so persistence adapters (see §13) have a single
-directory to preserve.
+Config env vars: `DATA_DIR`, `MAX_UPLOAD_MB`, `EMBED_MODEL`,
+`EMBED_MODEL_PATH` (baked model dir; enables offline load),
+`EMBED_THREADS` (default 1 — see §8 threading note), `EMBED_BATCH_SIZE`
+(default ~16), and the snapshot block: `SNAPSHOT_BACKEND`
+(`none`|`s3`|`local`, default `none`), `SNAPSHOT_ENDPOINT`,
+`SNAPSHOT_BUCKET`, `SNAPSHOT_ACCESS_KEY`, `SNAPSHOT_SECRET_KEY`,
+`SNAPSHOT_INTERVAL_S`. When `SNAPSHOT_BACKEND=none` (local dev) the app
+runs purely against local disk — current behavior, no object store needed.
+
+The embedding model is baked into the Docker image at `EMBED_MODEL_PATH`
+and loaded with `local_files_only`/`specific_model_path` so first boot
+needs no internet (fastembed is network-first by default — see §8). The
+SQLite database file lives under `DATA_DIR` alongside the `originals/`
+subdirectory, so the §4.1 adapter has a single directory to protect.
 
 ## 3. Ingestion
 
@@ -122,7 +141,52 @@ covered by an API test.
 **Connection semantics (pinned in Phase 1):** WAL mode, `busy_timeout`
 set, and a per-thread connection policy — a background ingestion thread
 writes while request threads read, and the steel thread must not discover
-"database is locked" by accident.
+"database is locked" by accident. WAL requires local block storage; the
+live DB file must never sit on a network mount (see §4.1).
+
+## 4.1 Persistence & durability (v1)
+
+The deployment target (Render free) has an ephemeral filesystem wiped on
+every idle spin-down, deploy, and arbitrary restart. Durability is
+provided by snapshot/restore to an S3-compatible object store (Cloudflare
+R2 — 10 GB free, **free egress**, which matters because every cold start
+re-downloads). This is v1 scope. Object storage cannot host a live SQLite
+file (no POSIX locking/fsync), so the pattern is snapshot-out /
+restore-on-boot, never "point `DATA_DIR` at the bucket."
+
+**Two data classes, handled differently:**
+
+- **Originals** (`DATA_DIR/originals/`) are write-once and immutable. Each
+  is uploaded to the object store *at ingest time*, keyed by content hash.
+  They are needed only for re-ingest (OCR, model change), never for search
+  or serving — so they are **not** restored eagerly on boot; they are
+  fetched on demand. This keeps the boot restore small.
+- **The SQLite DB** is the hot state (chunks, FTS, vectors, edges). It is
+  snapshotted with `VACUUM INTO <tmp>` (safe under concurrent writes,
+  checkpoints WAL, produces one consistent compacted file) then uploaded.
+
+**Snapshot triggers:** after every successful ingestion, after every
+delete, on a periodic backstop timer (`SNAPSHOT_INTERVAL_S`), and on
+graceful shutdown. Snapshotting on the write events (not only the timer)
+shrinks the data-loss window on the thing users care about — an uploaded
+document — to near zero, since ingestion is infrequent for a personal
+corpus.
+
+**Restore on boot:** if the local DB is absent and a snapshot exists,
+download and install it before serving traffic. At the DB's expected
+scale (tens of MB for a few thousand docs) this adds seconds to the
+free-tier cold start, not minutes — because originals are excluded.
+
+**Single-writer invariant:** two instances would race and silently
+overwrite each other's snapshots. The design assumes exactly one writer;
+on Render free this holds (one instance), and it is why horizontal
+scaling is a hard non-goal, not just a scale limit.
+
+**Backend seam:** a `SnapshotBackend` protocol (see §8.1) with an
+S3-compatible implementation (one boto3-based impl serves R2, Backblaze
+B2, Tigris, MinIO), a `local` directory implementation for dev/tests, and
+a `none` no-op. Selected once in the composition root from
+`SNAPSHOT_BACKEND`. When `none`, Corpora runs purely local.
 
 ## 5. Search
 
@@ -190,10 +254,10 @@ expansion on demand, edges capped at top-k.
 Reviewed through three independent lenses (SOLID rigor, YAGNI pragmatism,
 evolution/testability) plus an adversarial pass. The governing rule:
 **a Protocol exists only where there is a planned second implementation or
-a concrete testing need.** Of 11 candidate abstractions, exactly three
+a concrete testing need.** Of 11 candidate abstractions, exactly four
 survive; everything else is a concrete class or a plain function.
 
-### 8.1 The three Protocols
+### 8.1 The four Protocols
 
 **`Parser`** — seven v1 implementations, one per format; future OCR.
 
@@ -258,6 +322,25 @@ class Embedder(Protocol):
 tests. The real model is constructed only in the composition root (never
 at module import, never lazily in a route) — which is also what makes the
 §9 fail-fast startup check possible.
+
+**`SnapshotBackend`** — added when persistence became v1 scope (§4.1);
+two real implementations plus a test fake.
+
+```python
+class SnapshotBackend(Protocol):
+    def put(self, key: str, path: Path) -> None: ...
+    def get(self, key: str, dest: Path) -> bool: ...   # False if key absent
+    def exists(self, key: str) -> bool: ...
+```
+
+`S3SnapshotBackend` (one boto3 client serves R2/B2/Tigris/MinIO — all
+S3-API), `LocalSnapshotBackend` (a directory, for dev/tests), and a
+no-op bound when `SNAPSHOT_BACKEND=none`. Two real impls plus the test
+need clear the bar. It is deliberately a coarse blob put/get/exists — NOT
+a per-file storage port (that abstraction was rejected in §8.4); the
+adapter is driven only by the boot-restore and post-write-snapshot
+lifespan hooks, never by request handlers. The `VACUUM INTO` + upload
+sequence lives in one persistence module above this backend.
 
 ### 8.2 Patterns in use (and their ceilings)
 
@@ -325,8 +408,10 @@ lens and killed for abstracting over zero planned implementations:
 Repository/DAO/ORM layer over SQLite (the Postgres migration is an
 explicit phase-2 *rewrite exercise*; raw SQL in narrow modules is the
 point) · `TaskRunner` protocol over BackgroundTasks · `AnswerSynthesizer`
-protocol / Null Object for the 501 slot · `FileStorage` port over
-`DATA_DIR` (pathlib + one env var) · `KeywordIndex` protocol (one impl;
+protocol / Null Object for the 501 slot · per-file `FileStorage` port over
+`DATA_DIR` (pathlib + one env var; note the coarse `SnapshotBackend` of
+§8.1 is a different thing — blob put/get for whole-DB snapshots, not a
+per-write file abstraction) · `KeywordIndex` protocol (one impl;
 demoted to the concrete `Fts5Index` — the RRF symmetry it was meant to
 protect is a shared `ScoredChunk` dataclass, not an interface) ·
 `Retriever` protocol (one impl; it's a concrete service) · `GraphExporter`
@@ -347,6 +432,11 @@ frozen dataclass).
 - Startup self-check = the composition root: migrations applied, embedding
   model loads (fail fast), FTS5 available, sqlite-vec probe result logged,
   stored embedding model/dim matches `EMBED_MODEL`.
+- **Interrupted-ingestion recovery:** on the ephemeral free tier a restart
+  can kill an in-flight ingestion, and an OOM kill is not a catchable
+  `ParseError`. At startup, any document still in `processing` is marked
+  `failed: interrupted` so a restart never leaves a zombie stuck forever;
+  the user can re-trigger it via the re-ingest path.
 
 ## 10. Testing (TDD)
 
@@ -389,7 +479,13 @@ sqlite-vec + FTS5 together in one image. The vector contract suite ships
 in this phase.
 
 Subsequent phases add parsers (one at a time, fixture-tested), the
-similarity graph, and the UI — each independently testable.
+similarity graph, the UI, and the §4.1 persistence adapter — each
+independently testable. The persistence phase ships the
+`LocalSnapshotBackend` first (snapshot/restore round-trips against a temp
+dir, fully unit-testable with no network), then the `S3SnapshotBackend`
+verified against the real R2 free bucket, then the HF/Render-compatible
+Dockerfile (UID-1000 user, model baked at `EMBED_MODEL_PATH`, `--network
+none` offline-boot test).
 
 ## 12. Project layout
 
@@ -402,10 +498,11 @@ corpora/
 │   ├── ingest/            # parsers/ (one per format + registry), chunker, errors, validation, pipeline
 │   ├── search/            # fts (Fts5Index), vectors (two impls + factory), rrf, service, embeddings
 │   ├── graph/             # edges (incremental compute), export (2 serializers)
+│   ├── persistence/       # SnapshotBackend impls, VACUUM-INTO snapshot, restore-on-boot hooks
 │   └── db.py              # SQLite schema, migrations, WAL/busy_timeout, transactional delete
 ├── static/                # index.html, app.js, styles.css, cytoscape
 ├── tests/  (+ fixtures/, contracts/)
-├── Dockerfile             # single stage, slim, model baked in
+├── Dockerfile             # single stage, slim (Debian/glibc), model baked in, UID-1000 user
 ├── docker-compose.yml     # local run with data volume
 └── README.md
 ```
@@ -429,7 +526,7 @@ beyond what's specified:
   contract suite; the rest is an intentional rewrite exercise.
 - **Auth** — router-level `Depends` added in `create_app` + a migration
   adding owner columns; no placeholder user model in v1.
-- **Persistence on ephemeral hosts** (HF Spaces + HF Dataset) — the seam
-  is lifespan hooks (startup restore, periodic/shutdown sync with a WAL
-  checkpoint before snapshot) around `DATA_DIR`, which already contains
-  both the originals and the SQLite file.
+
+(Persistence on ephemeral hosts was promoted from this list into v1 — see
+§4.1. A future `SnapshotBackend` for a non-S3 store, e.g. HF Datasets, is
+just one more implementation of the existing protocol.)
