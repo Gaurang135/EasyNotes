@@ -107,10 +107,19 @@ async function loadRecent() {
   let docs = []; try { docs = await (await fetch("/documents")).json(); } catch { return; }
   $("#lib-count").textContent = docs.length ? `${docs.length} item${docs.length > 1 ? "s" : ""}` : "";
   $("#recent").innerHTML = docs.map((d, i) => `
-    <li style="animation-delay:${Math.min(i * 40, 400)}ms">
+    <li data-doc="${d.id}" style="animation-delay:${Math.min(i * 40, 400)}ms">
       <span class="doc-name"><span class="ext">${EXT[d.file_type] || d.file_type}</span>${esc(d.title)}</span>
-      <span class="pill ${d.status}">${d.status}${d.error ? " · " + esc(d.error) : ""}</span></li>`).join("")
+      <span class="doc-actions">
+        <span class="pill ${d.status}">${d.status}${d.error ? " · " + esc(d.error) : ""}</span>
+        <a class="iconbtn" href="/documents/${d.id}/download" title="Download original" download onclick="event.stopPropagation()">↓</a>
+        <button class="iconbtn del" data-del="${d.id}" title="Delete" onclick="event.stopPropagation()">✕</button>
+      </span></li>`).join("")
     || `<li><span style="color:var(--faint)">Nothing yet — drop a file above.</span></li>`;
+  $$("#recent li[data-doc]").forEach((el) => el.addEventListener("click", () => openDetail(el.dataset.doc)));
+  $$("#recent .del").forEach((b) => b.addEventListener("click", async () => {
+    await fetch(`/documents/${b.dataset.del}`, { method: "DELETE" });
+    toast("Deleted", ""); loadRecent(); loadStats();
+  }));
   const busy = docs.some((d) => d.status === "processing" || d.status === "pending");
   clearTimeout(pollTimer);
   if (busy) pollTimer = setTimeout(() => { loadRecent(); loadStats(); }, 1400);
@@ -124,15 +133,55 @@ $("#search-form").addEventListener("submit", async (ev) => {
   const data = await (await fetch(`/search?q=${encodeURIComponent(q)}&mode=${searchMode}`)).json();
   if (!data.results.length) { box.innerHTML = `<p class="empty">No matches for “${esc(q)}”.</p>`; return; }
   const top = Math.max(...data.results.map((h) => h.score)) || 1;
+  const isTable = (h) => ["csv", "xlsx"].includes(h.file_type) || (h.location || "").match(/row|sheet/i);
   box.innerHTML = data.results.map((h, i) => {
     const rel = Math.round((h.score / top) * 100);
-    return `<article class="card" style="animation-delay:${Math.min(i * 55, 500)}ms">
+    const preview = isTable(h)
+      ? `<span class="snip-badge">▦ structured table</span> <span style="color:var(--muted)">— open to filter rows</span>`
+      : mark(esc(h.snippet), q);
+    return `<article class="card" data-doc="${h.document_id}" style="animation-delay:${Math.min(i * 55, 500)}ms">
       <div class="meta">
         <span class="title">${esc(h.document_title)} <span style="color:var(--faint)">· ${h.file_type}${h.location ? " · " + esc(h.location) : ""}</span></span>
         <span class="rel" title="fused score ${h.score.toFixed(3)}"><span class="relbar"><span style="width:${rel}%"></span></span><span class="rellabel">${i === 0 ? "Best match" : rel + "%"}</span></span>
-      </div><div class="snip">${mark(esc(h.snippet), q)}</div></article>`;
+      </div><div class="snip">${preview}</div>
+      <div class="card-cta">Open document →</div></article>`;
   }).join("");
+  $$("#results .card").forEach((el) => el.addEventListener("click", () => openDetail(el.dataset.doc)));
 });
+
+/* ---------- document detail (messy doc -> extracted structured data) ---------- */
+async function openDetail(docId) {
+  let d; try { d = await (await fetch(`/documents/${docId}/detail`)).json(); } catch { return; }
+  const fields = d.fields.length
+    ? `<div class="fieldgrid">${d.fields.map((f) =>
+        `<div class="fcard"><div class="fk"><span>${esc(f.key)}</span><span class="kind">${f.kind}</span></div><div class="fv">${esc(f.value)}</div></div>`).join("")}</div>`
+    : `<p class="d-empty">No key-value fields extracted.</p>`;
+  const tables = d.tables.length
+    ? d.tables.map((t) => `<div id="dt-${t.id}" class="dtable" data-tid="${t.id}"><div class="d-empty">Loading ${esc(t.name)}…</div></div>`).join("")
+    : `<p class="d-empty">No tables in this document.</p>`;
+  const text = d.text_preview
+    ? `<div class="d-text">${esc(d.text_preview)}</div>` : `<p class="d-empty">No text preview.</p>`;
+  $("#detail-body").innerHTML = `
+    <div class="d-head"><span class="ext">${EXT[d.file_type] || d.file_type}</span><span class="d-title">${esc(d.title)}</span></div>
+    <div class="d-sub">${d.file_type} · ${d.status}${d.error ? " · " + esc(d.error) : ""} · ${d.fields.length} fields · ${d.tables.length} tables</div>
+    <div class="d-section"><h4>Extracted fields</h4>${fields}</div>
+    <div class="d-section"><h4>Tables</h4>${tables}</div>
+    <div class="d-section"><h4>Text</h4>${text}</div>`;
+  $("#detail").hidden = false;
+  for (const t of d.tables) renderMiniTable(t.id);
+}
+async function renderMiniTable(tid) {
+  const r = await (await fetch(`/tables/${tid}/rows?limit=25`)).json();
+  const types = r.columns.map((c) => c.type);
+  const head = `<thead><tr>${r.columns.map((c) => `<th>${esc(c.name)}<span class="ty">${c.type}</span></th>`).join("")}</tr></thead>`;
+  const body = r.rows.map((row) => `<tr>${row.map((cell, i) =>
+    `<td class="${types[i] === "number" ? "num" : ""}">${esc(String(cell))}</td>`).join("")}</tr>`).join("");
+  const el = $(`#dt-${tid}`);
+  if (el) el.innerHTML = `<div class="tablewrap"><table class="grid">${head}<tbody>${body}</tbody></table>` +
+    `<div class="grid-foot">${r.total} row${r.total !== 1 ? "s" : ""}</div></div>`;
+}
+$("#detail-close").addEventListener("click", () => { $("#detail").hidden = true; });
+$("#detail").addEventListener("click", (e) => { if (e.target.id === "detail") $("#detail").hidden = true; });
 
 /* ---------- data: tables ---------- */
 let curTable = null;
@@ -216,8 +265,9 @@ async function renderGraph(q) {
   cy.on("tap", "node", (e) => { const d = e.target.data(); toast(`${d.label} — ${d.size} chunk${d.size > 1 ? "s" : ""}`, ""); });
 }
 
+const STOP = new Set("a an the is are was were be been am im i who what when where why how which of to in on at for and or but if it its this that as by with from do does did can could will would my me you your we".split(" "));
 function mark(text, q) {
-  const terms = q.split(/\s+/).filter((t) => t.length > 1).map((t) => t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+  const terms = q.toLowerCase().split(/\s+/).filter((t) => t.length > 1 && !STOP.has(t)).map((t) => t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
   return terms.length ? text.replace(new RegExp(`(${terms.join("|")})`, "gi"), "<mark>$1</mark>") : text;
 }
 

@@ -88,7 +88,6 @@
         <div class="search-input"><span class="search-icon" aria-hidden="true">✦</span>
           <input id="graph-q" placeholder="Light up nodes matching a query… (optional)" autocomplete="off"></div>
         <button class="btn btn-primary">Illuminate</button>
-        <a href="/graph/export" class="btn btn-ghost">Export</a>
       </form>
       <div class="stage">
         <div id="cy"></div>
@@ -123,6 +122,13 @@
       <ul id="recent" class="recent"></ul>
     </section>
   </main>
+
+  <div id="detail" class="modal" hidden>
+    <div class="modal-card">
+      <button id="detail-close" class="modal-close" aria-label="Close">✕</button>
+      <div id="detail-body"></div>
+    </div>
+  </div>
 
   <div id="toasts" class="toasts" aria-live="polite"></div>
   <script src="/cytoscape.min.js" onerror="window.__noCyto=true"></script>

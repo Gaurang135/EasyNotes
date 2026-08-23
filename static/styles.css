@@ -149,6 +149,12 @@ textarea.field { resize: vertical; line-height: 1.6; }
   animation: rise .5s var(--ease) both; transition: border-color .25s, transform .25s var(--ease); }
 .recent li:hover { border-color: var(--line-strong); transform: translateX(3px); }
 .doc-name { font-weight: 500; display: flex; align-items: center; gap: 10px; min-width: 0; }
+.doc-actions { display: flex; align-items: center; gap: 8px; flex: none; }
+.iconbtn { width: 28px; height: 28px; display: inline-flex; align-items: center; justify-content: center;
+  border-radius: 8px; border: 1px solid var(--line); background: var(--panel); color: var(--muted);
+  text-decoration: none; cursor: pointer; font-size: 13px; transition: all .2s var(--ease); }
+.iconbtn:hover { color: var(--text); border-color: var(--line-strong); }
+.iconbtn.del:hover { color: var(--bad); border-color: rgba(240,115,106,.5); }
 .doc-name .ext { font: 500 10px "JetBrains Mono", monospace; color: var(--faint); border: 1px solid var(--line);
   padding: 2px 7px; border-radius: 6px; text-transform: uppercase; flex: none; }
 .pill { font: 500 12px "Instrument Sans", sans-serif; padding: 4px 11px; border-radius: 999px; flex: none;
@@ -187,6 +193,9 @@ textarea.field { resize: vertical; line-height: 1.6; }
 .card .rellabel { font: 500 11px "JetBrains Mono", monospace; color: var(--muted); white-space: nowrap; }
 .card .snip { color: #c9cdd8; line-height: 1.65; font-size: 14.5px; }
 .card mark { background: linear-gradient(transparent 55%, rgba(242,166,90,.4) 0); color: #fff; padding: 0 1px; border-radius: 2px; }
+.card .card-cta { margin-top: 10px; color: var(--ember); font: 500 12px "JetBrains Mono", monospace; opacity: 0; transform: translateX(-4px); transition: all .25s var(--ease); }
+.card:hover .card-cta { opacity: 1; transform: none; }
+.snip-badge { display: inline-block; color: var(--teal); font: 500 12px "JetBrains Mono", monospace; }
 
 /* --- graph stage --- */
 .stage { position: relative; margin-top: 22px; }
@@ -247,6 +256,31 @@ textarea.field { resize: vertical; line-height: 1.6; }
 .chip.is-active { color: var(--ink); background: linear-gradient(120deg, var(--teal), #7fe0d5); border-color: transparent; }
 .field-key { color: var(--muted); }
 .field-kind { font: 500 10px "JetBrains Mono", monospace; color: var(--faint); border: 1px solid var(--line); padding: 2px 7px; border-radius: 6px; text-transform: uppercase; }
+
+/* --- document detail modal --- */
+.card, .recent li { cursor: pointer; }
+.modal { position: fixed; inset: 0; z-index: 60; display: flex; align-items: flex-start; justify-content: center;
+  padding: 40px 20px; overflow-y: auto; background: rgba(4,5,8,.7); backdrop-filter: blur(6px); animation: viewin .3s var(--ease); }
+.modal-card { position: relative; width: 100%; max-width: 760px; border: 1px solid var(--line-strong); border-radius: 20px;
+  background: var(--panel-solid); box-shadow: 0 40px 90px -30px rgba(0,0,0,.85); padding: 26px 28px 30px;
+  animation: cardin .4s var(--ease); }
+.modal-close { position: absolute; top: 16px; right: 16px; width: 34px; height: 34px; border-radius: 10px;
+  border: 1px solid var(--line); background: var(--panel); color: var(--muted); cursor: pointer; font-size: 14px; }
+.modal-close:hover { color: var(--text); border-color: var(--line-strong); }
+.d-head { display: flex; align-items: center; gap: 12px; margin-bottom: 4px; }
+.d-title { font-family: "Fraunces", serif; font-weight: 600; font-size: 24px; }
+.d-sub { color: var(--muted); font: 500 12px "JetBrains Mono", monospace; margin-bottom: 22px; }
+.d-section { margin-top: 22px; }
+.d-section h4 { margin: 0 0 12px; font: 600 12px "JetBrains Mono", monospace; letter-spacing: .14em;
+  text-transform: uppercase; color: var(--ember); }
+.d-empty { color: var(--faint); font-size: 13px; }
+.fieldgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; }
+.fcard { border: 1px solid var(--line); border-radius: 12px; padding: 11px 14px; background: var(--panel); }
+.fcard .fk { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .08em; display: flex; justify-content: space-between; }
+.fcard .fk .kind { color: var(--faint); font-family: "JetBrains Mono", monospace; }
+.fcard .fv { color: var(--text); font-weight: 500; margin-top: 3px; word-break: break-word; }
+.d-text { color: #c9cdd8; line-height: 1.6; font-size: 13.5px; white-space: pre-wrap; max-height: 220px; overflow-y: auto;
+  border: 1px solid var(--line); border-radius: 12px; padding: 14px; background: var(--panel); }
 
 @media (max-width: 760px) { .stats { grid-template-columns: repeat(2, 1fr); } }
 @media (max-width: 640px) {

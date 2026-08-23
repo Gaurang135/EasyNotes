@@ -3,10 +3,12 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 from fastapi import APIRouter, UploadFile, File, BackgroundTasks, Depends, HTTPException
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from app import db
 from app.models import Status
 from app.ingest import validation
+from app.errors import CorruptFileError
 from app.api.deps import get_state
 
 router = APIRouter()
@@ -36,7 +38,11 @@ def upload(background: BackgroundTasks, file: UploadFile = File(...), state=Depe
     originals.mkdir(parents=True, exist_ok=True)
     tmp = originals / f"_tmp_{file.filename}"
     tmp.write_bytes(file.file.read())
-    validation.check_size(tmp, state.settings.max_upload_mb)
+    try:
+        validation.check_size(tmp, state.settings.max_upload_mb)
+    except CorruptFileError as e:
+        tmp.unlink(missing_ok=True)
+        raise HTTPException(413, str(e))
     ftype = validation.sniff_type(tmp, file.filename or "")
     if ftype not in state.parsers:
         tmp.unlink(missing_ok=True)
@@ -85,6 +91,18 @@ def get_doc(doc_id: int, state=Depends(get_state)):
         raise HTTPException(404, "not found")
     return {"id": r[0], "title": r[1], "file_type": r[2], "status": r[3],
             "error": r[4], "warnings": json.loads(r[5] or "[]")}
+
+
+@router.get("/documents/{doc_id}/download")
+def download_doc(doc_id: int, state=Depends(get_state)):
+    r = state.conn.execute("SELECT filename FROM documents WHERE id=?", (doc_id,)).fetchone()
+    if not r:
+        raise HTTPException(404, "not found")
+    filename = r[0]
+    path = Path(state.settings.data_dir) / "originals" / f"{doc_id}_{filename}"
+    if not path.exists():
+        raise HTTPException(404, "original file not available")
+    return FileResponse(str(path), filename=filename)
 
 
 @router.delete("/documents/{doc_id}", status_code=204)

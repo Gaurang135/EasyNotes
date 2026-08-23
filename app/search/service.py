@@ -1,9 +1,26 @@
 from __future__ import annotations
+import re
 from app.models import SearchHit, SearchFilter
 from app.search.fts import sanitize_fts_query
 from app.search.rrf import rrf
 
 FUSION_DEPTH = 100
+
+# Stopwords are ignored when anchoring/ highlighting snippets, so a query like
+# "who is free" centers on "free", not on the first "is".
+STOPWORDS = {
+    "a", "an", "the", "is", "are", "was", "were", "be", "been", "am", "im", "i",
+    "who", "what", "when", "where", "why", "how", "which", "whom",
+    "of", "to", "in", "on", "at", "for", "and", "or", "but", "if", "it", "its",
+    "this", "that", "these", "those", "as", "by", "with", "from", "do", "does",
+    "did", "can", "could", "will", "would", "my", "me", "you", "your", "we",
+}
+
+
+def content_terms(query: str) -> list[str]:
+    """Query terms worth anchoring on: non-stopword, length>1, longest first."""
+    terms = [t for t in re.findall(r"\w+", query.lower()) if t not in STOPWORDS and len(t) > 1]
+    return sorted(set(terms), key=len, reverse=True)
 
 
 def _passes_filter(conn, chunk_ids, flt: SearchFilter):
@@ -20,13 +37,15 @@ def _passes_filter(conn, chunk_ids, flt: SearchFilter):
     return {r[0] for r in conn.execute(sql, params)}
 
 
-def _snippet(text: str, query: str, width: int = 200) -> str:
+def _snippet(text: str, query: str, width: int = 220) -> str:
     low = text.lower()
-    for term in query.lower().split():
+    # anchor on the most meaningful query term present, not the first stopword
+    for term in content_terms(query):
         i = low.find(term)
         if i >= 0:
-            start = max(0, i - width // 2)
-            return ("…" if start else "") + text[start:start + width].strip() + "…"
+            start = max(0, i - width // 3)
+            end = start + width
+            return ("…" if start else "") + text[start:end].strip() + ("…" if end < len(text) else "")
     return text[:width].strip() + ("…" if len(text) > width else "")
 
 
