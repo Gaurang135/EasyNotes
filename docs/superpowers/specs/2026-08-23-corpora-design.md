@@ -638,9 +638,13 @@ beyond what's specified:
   via the `meta` table; corpus rebuilt via the re-ingest path.
 - **Entity-level knowledge graph** (spaCy NER) — one new pipeline stage +
   new tables; reuses the neutral graph model and exporters.
-- **Queue/worker + Postgres/pgvector** (Approach B) — worker calls
-  `pipeline.ingest(document_id)` as-is; `PgVectorIndex` joins the vector
-  contract suite; the rest is an intentional rewrite exercise.
+- **Queue/worker + Postgres/pgvector** (Approach B, e.g. Render Postgres
+  or Neon) — worker calls `pipeline.ingest(document_id)` as-is;
+  `PgVectorIndex` (pgvector) and a `tsvector` keyword index replace the
+  SQLite pair. This is a deliberate rewrite exercise, *not* a durability
+  shortcut: a managed Postgres was evaluated (2026-08-24) and rejected for
+  v1 because it abandons the SQLite/FTS5/sqlite-vec learning goal and
+  can't store the SQLite snapshot the way object storage (R2) does.
 - **Auth** — router-level `Depends` added in `create_app` + a migration
   adding owner columns; no placeholder user model in v1.
 - **CPU cross-encoder reranking** — a small ONNX reranker
