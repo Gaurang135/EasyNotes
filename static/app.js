@@ -18,10 +18,10 @@ function activateTab(btn) {
   $("#view-" + btn.dataset.view).classList.add("is-active");
   slide(tabGlow, btn);
   const v = btn.dataset.view;
-  if (v === "search") loadStats();
+  if (v === "search") { loadStats(); loadOverview(); }
   if (v === "graph") renderGraph();
   if (v === "add") loadRecent();
-  if (v === "data") { loadTables(); loadFields(); }
+  if (v === "data") { loadAllTables(); loadFields(); }
 }
 $$(".tab").forEach((t) => t.addEventListener("click", () => activateTab(t)));
 
@@ -195,62 +195,78 @@ async function renderMiniTable(tid) {
 $("#detail-close").addEventListener("click", () => { $("#detail").hidden = true; });
 $("#detail").addEventListener("click", (e) => { if (e.target.id === "detail") $("#detail").hidden = true; });
 
-/* ---------- data: tables ---------- */
-let curTable = null;
-async function loadTables() {
-  let tables = []; try { tables = await (await fetch("/tables")).json(); } catch { return; }
-  const pick = $("#table-pick");
-  if (!tables.length) {
-    pick.innerHTML = `<option>No tables yet</option>`; pick.disabled = true;
-    $("#table-controls").hidden = true;
-    $("#table-view").innerHTML = `<p class="empty">No tables yet — add a CSV, spreadsheet, or a doc with tables.</p>`;
+/* ---------- landing overview: messy docs -> structured data, made visible ---------- */
+async function loadOverview() {
+  if ($("#q").value.trim()) return;                 // don't clobber active search results
+  let docs = []; try { docs = await (await fetch("/overview")).json(); } catch { return; }
+  const box = $("#results");
+  const ready = docs.filter((d) => d.status === "ready");
+  if (!ready.length) {
+    box.innerHTML = `<p class="empty">Add documents (Add tab) — each one is turned into structured fields & tables you can query here.</p>`;
     return;
   }
-  pick.disabled = false;
-  pick.innerHTML = tables.map((t) => `<option value="${t.id}">${esc(t.document_title)} — ${esc(t.name)} (${t.row_count} rows)</option>`).join("");
-  curTable = tables[0];
-  pick.onchange = () => { curTable = tables.find((t) => t.id == pick.value); setupControls(); runTableQuery(); };
-  setupControls(); runTableQuery();
-}
-function setupControls() {
-  $("#table-controls").hidden = false;
-  const cols = curTable.columns;
-  $("#f-col").innerHTML = cols.map((c) => `<option value="${esc(c.name)}">${esc(c.name)}</option>`).join("");
-  $("#s-col").innerHTML = `<option value="">—</option>` + cols.map((c) => `<option value="${esc(c.name)}">${esc(c.name)}</option>`).join("");
-}
-$("#f-apply").addEventListener("click", runTableQuery);
-$("#f-val").addEventListener("keydown", (e) => { if (e.key === "Enter") runTableQuery(); });
-async function runTableQuery() {
-  if (!curTable) return;
-  const p = new URLSearchParams();
-  const val = $("#f-val").value.trim();
-  if (val) { p.set("col", $("#f-col").value); p.set("op", $("#f-op").value); p.set("val", val); }
-  if ($("#s-col").value) { p.set("sort", $("#s-col").value); p.set("dir", $("#s-dir").value); }
-  p.set("limit", "100");
-  const r = await (await fetch(`/tables/${curTable.id}/rows?` + p)).json();
-  const types = r.columns.map((c) => c.type);
-  const head = `<thead><tr>${r.columns.map((c) => `<th>${esc(c.name)}<span class="ty">${c.type}</span></th>`).join("")}</tr></thead>`;
-  const body = r.rows.map((row) => `<tr>${row.map((cell, i) =>
-    `<td class="${types[i] === "number" ? "num" : ""}">${esc(String(cell))}</td>`).join("")}</tr>`).join("");
-  $("#table-view").innerHTML = `<table class="grid">${head}<tbody>${body}</tbody></table>` +
-    `<div class="grid-foot">${r.total} row${r.total !== 1 ? "s" : ""}${r.total > r.rows.length ? ` · showing ${r.rows.length}` : ""}</div>`;
+  box.innerHTML = `<div class="overview-h">Your library — extracted into structured data</div>` +
+    ready.map((d, i) => {
+      const chips = d.fields.slice(0, 5).map((f) =>
+        `<span class="ochip"><span class="ock">${f.kind}</span>${esc(f.value)}</span>`).join("");
+      const badge = `${d.field_count} field${d.field_count !== 1 ? "s" : ""}${d.table_count ? ` · ${d.table_count} table${d.table_count !== 1 ? "s" : ""}` : ""}`;
+      return `<article class="ocard" data-doc="${d.id}" style="animation-delay:${Math.min(i * 45, 400)}ms">
+        <div class="ohead"><span class="ext">${EXT[d.file_type] || d.file_type}</span><span class="otitle">${esc(d.title)}</span><span class="obadge">${badge}</span></div>
+        ${chips ? `<div class="ochips">${chips}</div>` : `<div class="ochips muted">structured as searchable text</div>`}
+      </article>`;
+    }).join("");
+  $$("#results .ocard").forEach((el) => el.addEventListener("click", () => openDetail(el.dataset.doc)));
 }
 
-/* ---------- data: fields ---------- */
+/* ---------- data: all tables together (cross-document) ---------- */
+let allTables = [];
+async function loadAllTables() {
+  let meta = []; try { meta = await (await fetch("/tables")).json(); } catch { return; }
+  if (!meta.length) { $("#tables-all").innerHTML = `<p class="empty">No tables yet — add a CSV, spreadsheet, or a doc with tables.</p>`; allTables = []; return; }
+  allTables = [];
+  for (const t of meta) {
+    const r = await (await fetch(`/tables/${t.id}/rows?limit=200`)).json();
+    allTables.push({ meta: t, columns: r.columns, rows: r.rows, total: r.total });
+  }
+  renderAllTables($("#table-filter").value);
+}
+function renderAllTables(filter) {
+  const f = (filter || "").trim().toLowerCase();
+  $("#tables-all").innerHTML = allTables.map((t) => {
+    const rows = f ? t.rows.filter((r) => r.some((c) => String(c).toLowerCase().includes(f))) : t.rows;
+    const types = t.columns.map((c) => c.type);
+    const head = `<thead><tr>${t.columns.map((c) => `<th>${esc(c.name)}<span class="ty">${c.type}</span></th>`).join("")}</tr></thead>`;
+    const body = rows.slice(0, 100).map((r) => `<tr>${r.map((cell, i) =>
+      `<td class="${types[i] === "number" ? "num" : ""}">${esc(String(cell))}</td>`).join("")}</tr>`).join("");
+    return `<div class="dtable-block">
+      <div class="dtable-h" data-doc="${t.meta.document_id}"><span class="ext">${EXT[t.meta.file_type] || t.meta.file_type}</span>${esc(t.meta.document_title)} — ${esc(t.meta.name)} <span class="muted">${rows.length}/${t.total} rows</span></div>
+      <div class="tablewrap"><table class="grid">${head}<tbody>${body}</tbody></table></div></div>`;
+  }).join("") || `<p class="empty">No rows match “${esc(f)}”.</p>`;
+  $$("#tables-all .dtable-h").forEach((el) => el.addEventListener("click", () => openDetail(el.dataset.doc)));
+}
+$("#table-filter").addEventListener("input", (e) => renderAllTables(e.target.value));
+
+/* ---------- data: fields (all values across all docs) ---------- */
 let fieldKind = "";
 const KINDS = ["", "amount", "date", "email", "phone", "url", "pair"];
 async function loadFields() {
   $("#field-kinds").innerHTML = KINDS.map((k) =>
     `<button class="chip ${k === fieldKind ? "is-active" : ""}" data-k="${k}">${k || "all"}</button>`).join("");
   $$("#field-kinds .chip").forEach((c) => c.addEventListener("click", () => { fieldKind = c.dataset.k; loadFields(); }));
-  const url = "/fields" + (fieldKind ? `?kind=${fieldKind}` : "");
-  let fields = []; try { fields = await (await fetch(url)).json(); } catch { return; }
+  const q = $("#field-filter").value.trim();
+  const params = new URLSearchParams();
+  if (fieldKind) params.set("kind", fieldKind);
+  if (q) params.set("q", q);
+  let fields = []; try { fields = await (await fetch("/fields?" + params)).json(); } catch { return; }
   const g = $("#fields-grid");
-  if (!fields.length) { g.innerHTML = `<tbody><tr><td class="empty" style="padding:24px">No fields extracted yet.</td></tr></tbody>`; return; }
+  if (!fields.length) { g.innerHTML = `<tbody><tr><td class="empty" style="padding:24px">No fields match.</td></tr></tbody>`; return; }
   g.innerHTML = `<thead><tr><th>Document</th><th>Key</th><th>Value</th><th>Type</th></tr></thead><tbody>` +
-    fields.map((f) => `<tr><td>${esc(f.document_title)}</td><td class="field-key">${esc(f.key)}</td><td>${esc(f.value)}</td><td><span class="field-kind">${f.kind}</span></td></tr>`).join("") +
+    fields.map((f) => `<tr data-doc="${f.document_id}"><td>${esc(f.document_title)}</td><td class="field-key">${esc(f.key)}</td><td>${esc(f.value)}</td><td><span class="field-kind">${f.kind}</span></td></tr>`).join("") +
     `</tbody>`;
+  $$("#fields-grid tr[data-doc]").forEach((el) => el.addEventListener("click", () => openDetail(el.dataset.doc)));
 }
+let fieldFilterTimer = null;
+$("#field-filter").addEventListener("input", () => { clearTimeout(fieldFilterTimer); fieldFilterTimer = setTimeout(loadFields, 200); });
 
 /* ---------- graph ---------- */
 $("#graph-form").addEventListener("submit", (ev) => { ev.preventDefault(); renderGraph($("#graph-q").value.trim()); });
@@ -299,4 +315,6 @@ function mark(text, q) {
   return terms.length ? text.replace(new RegExp(`(${terms.join("|")})`, "gi"), "<mark>$1</mark>") : text;
 }
 
+$("#q").addEventListener("input", () => { if (!$("#q").value.trim()) loadOverview(); });
 loadStats();
+loadOverview();

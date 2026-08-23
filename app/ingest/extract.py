@@ -49,10 +49,14 @@ def extract_fields(text: str, limit: int = 200) -> list[Field]:
             add(kind, m if isinstance(m, str) else m[0], kind)
             if len(out) >= limit:
                 return out
+    _SCHEMES = {"http", "https", "ftp", "mailto", "tel"}
     for key, val in _PAIR.findall(text):
-        # skip pairs already captured as a typed field (e.g. "Email: x@y.com")
+        k = key.strip()
+        # skip URL/scheme false positives ("https://..." parses as https : //...)
+        if k.lower() in _SCHEMES or val.startswith("//"):
+            continue
         if len(val) <= 120:
-            add(key.strip(), val, "pair")
+            add(k, val, "pair")
             if len(out) >= limit:
                 break
     return out

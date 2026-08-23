@@ -293,6 +293,31 @@ textarea.field { resize: vertical; line-height: 1.6; }
 .d-text { color: #c9cdd8; line-height: 1.6; font-size: 13.5px; white-space: pre-wrap; max-height: 220px; overflow-y: auto;
   border: 1px solid var(--line); border-radius: 12px; padding: 14px; background: var(--panel); }
 
+/* --- landing overview cards (messy doc -> structured data) --- */
+.overview-h { font: 600 12px "JetBrains Mono", monospace; letter-spacing: .12em; text-transform: uppercase;
+  color: var(--faint); margin: 4px 0 4px; }
+.ocard { border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; background: var(--panel);
+  backdrop-filter: blur(10px); cursor: pointer; animation: cardin .5s var(--ease) both;
+  transition: border-color .2s, transform .2s var(--ease); }
+.ocard:hover { border-color: var(--line-strong); transform: translateY(-2px); }
+.ohead { display: flex; align-items: center; gap: 10px; }
+.otitle { font-weight: 600; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.obadge { color: var(--teal); font: 500 12px "JetBrains Mono", monospace; flex: none; }
+.ochips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.ochips.muted { color: var(--faint); font-size: 13px; }
+.ochip { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); border-radius: 8px;
+  padding: 3px 9px; font-size: 12.5px; color: var(--text); background: rgba(255,255,255,.02); }
+.ochip .ock { font: 500 10px "JetBrains Mono", monospace; color: var(--faint); text-transform: uppercase; }
+
+/* --- stacked tables (unified data view) --- */
+.dtable-block { margin-bottom: 18px; }
+.dtable-h { display: flex; align-items: center; gap: 10px; font-weight: 600; margin-bottom: 8px; cursor: pointer; }
+.dtable-h:hover { color: var(--ember-hot); }
+.dtable-h .muted { color: var(--faint); font: 500 12px "JetBrains Mono", monospace; }
+.hint { color: var(--muted); font-size: 13px; margin: 0 0 14px; }
+.muted { color: var(--faint); }
+#field-filter, #table-filter { max-width: 460px; }
+
 @media (max-width: 760px) { .stats { grid-template-columns: repeat(2, 1fr); } }
 @media (max-width: 640px) {
   .masthead { padding: 28px 18px 16px; }

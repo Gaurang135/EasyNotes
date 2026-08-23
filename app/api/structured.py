@@ -21,6 +21,23 @@ def stats(state=Depends(get_state)):
     }
 
 
+@router.get("/overview")
+def overview(state=Depends(get_state)):
+    """Per-document structured summary for the landing dashboard: what each messy
+    document was turned into (fields + tables)."""
+    c = state.conn
+    out = []
+    for did, title, ftype, status, err in c.execute(
+            "SELECT id,title,file_type,status,error FROM documents ORDER BY id DESC"):
+        fields = [{"key": r[0], "value": r[1], "kind": r[2]} for r in c.execute(
+            "SELECT key,value,kind FROM fields WHERE document_id=? LIMIT 6", (did,))]
+        fcount = c.execute("SELECT count(*) FROM fields WHERE document_id=?", (did,)).fetchone()[0]
+        tcount = c.execute("SELECT count(*) FROM tables WHERE document_id=?", (did,)).fetchone()[0]
+        out.append({"id": did, "title": title, "file_type": ftype, "status": status, "error": err,
+                    "fields": fields, "field_count": fcount, "table_count": tcount})
+    return out
+
+
 @router.get("/documents/{doc_id}/detail")
 def document_detail(doc_id: int, state=Depends(get_state)):
     """Everything extracted from one messy document: fields, tables, text preview."""
@@ -43,10 +60,10 @@ def document_detail(doc_id: int, state=Depends(get_state)):
 @router.get("/tables")
 def list_tables(state=Depends(get_state)):
     rows = state.conn.execute(
-        "SELECT t.id, t.document_id, d.title, t.name, t.columns, t.row_count "
+        "SELECT t.id, t.document_id, d.title, t.name, t.columns, t.row_count, d.file_type "
         "FROM tables t JOIN documents d ON d.id=t.document_id ORDER BY t.id DESC").fetchall()
     return [{"id": r[0], "document_id": r[1], "document_title": r[2], "name": r[3],
-             "columns": json.loads(r[4]), "row_count": r[5]} for r in rows]
+             "columns": json.loads(r[4]), "row_count": r[5], "file_type": r[6]} for r in rows]
 
 
 def _coerce(val: str, typ: str):

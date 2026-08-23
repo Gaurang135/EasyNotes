@@ -57,27 +57,15 @@
 
       <div id="pane-tables" class="pane is-active">
         <div class="tablebar">
-          <select id="table-pick" class="field"></select>
+          <input id="table-filter" class="field" placeholder="Filter rows across all tables…">
         </div>
-        <div id="table-controls" class="controls" hidden>
-          <select id="f-col" class="mini"></select>
-          <select id="f-op" class="mini">
-            <option value="contains">contains</option>
-            <option value="eq">equals</option>
-            <option value="gte">≥</option>
-            <option value="lte">≤</option>
-          </select>
-          <input id="f-val" class="mini grow" placeholder="value…">
-          <span class="ctl-sep">sort</span>
-          <select id="s-col" class="mini"><option value="">—</option></select>
-          <select id="s-dir" class="mini"><option value="asc">↑</option><option value="desc">↓</option></select>
-          <button id="f-apply" class="btn btn-primary btn-sm">Apply</button>
-        </div>
-        <div id="table-view" class="tablewrap"><p class="empty">No tables yet — add a CSV, spreadsheet, or a doc with tables.</p></div>
+        <div id="tables-all"><p class="empty">No tables yet — add a CSV, spreadsheet, or a doc with tables.</p></div>
       </div>
 
       <div id="pane-fields" class="pane">
+        <p class="hint">Every value extracted across all your documents — one queryable dataset.</p>
         <div class="chips" id="field-kinds"></div>
+        <input id="field-filter" class="field" placeholder="Search fields by value or key…">
         <div class="tablewrap"><table class="grid" id="fields-grid"></table></div>
       </div>
     </section>
