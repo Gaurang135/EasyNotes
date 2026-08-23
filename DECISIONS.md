@@ -3,6 +3,17 @@
 A running log of *why* things are the way they are. Newest first.
 Format: date · decision · reason · alternatives rejected.
 
+## 2026-08-24 — fastembed offline loading: HF_HUB_OFFLINE + cache_dir (not specific_model_path)
+Discovered during the Docker build: `specific_model_path` does NOT bypass
+fastembed 0.5.x's network-first check, so an offline container still tried to
+download and failed. Fix: bake the model into an HF cache dir as the runtime
+user, set `HF_HUB_OFFLINE=1` (after the build-time bake) and pass `cache_dir`.
+Proven by `make docker-test` (boots + searches with `--network none`).
+
+## 2026-08-24 — sqlite3.Connection needs a subclass to hold `vec_available`
+Python 3.12's C-type Connection rejects arbitrary attributes; use a thin
+`_Conn(sqlite3.Connection)` factory subclass. Caught by TDD on Task 3.
+
 ## 2026-08-24 — Name: EasyNotes
 "Dump any file, find it in plain English." Friendly, low-friction feel.
 Rejected: Corpora (too academic), Stash/Trove/Shoebox.
