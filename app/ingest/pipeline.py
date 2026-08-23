@@ -58,6 +58,7 @@ class IngestionPipeline:
                 items.append((cur.lastrowid, vec))
             self.conn.commit()                       # triggers populate FTS
             self.vector_index.add(items)
+            self._store_structured(document_id, parsed)
             db.set_status(self.conn, document_id, Status.READY, warnings=parsed.warnings)
             self._post_ready(document_id)
         except ParseError as e:
@@ -65,6 +66,28 @@ class IngestionPipeline:
         except Exception as e:                        # never crash the service
             log.exception("ingest failed for %s", document_id)
             db.set_status(self.conn, document_id, Status.FAILED, error=f"internal error: {e}")
+
+    def _store_structured(self, document_id: int, parsed) -> None:
+        import json
+        from app.ingest.extract import extract_fields, infer_column_type
+        # tables → typed columns + JSON rows (Mode A: precise queries)
+        for t in parsed.tables:
+            col_types = [infer_column_type([r[i] if i < len(r) else "" for r in t.rows])
+                         for i in range(len(t.columns))]
+            cols = json.dumps([{"name": c, "type": ty} for c, ty in zip(t.columns, col_types)])
+            cur = self.conn.execute(
+                "INSERT INTO tables(document_id,name,columns,location,row_count) VALUES (?,?,?,?,?)",
+                (document_id, t.name, cols, t.location, len(t.rows)))
+            tid = cur.lastrowid
+            self.conn.executemany(
+                "INSERT INTO table_rows(table_id,row_index,data) VALUES (?,?,?)",
+                [(tid, i, json.dumps(r)) for i, r in enumerate(t.rows)])
+        # fields from all prose text (config-driven extraction)
+        prose = "\n".join(b.text for b in parsed.text_blocks if b.kind != "table")
+        for f in extract_fields(prose):
+            self.conn.execute("INSERT INTO fields(document_id,key,value,kind) VALUES (?,?,?,?)",
+                              (document_id, f.key, f.value, f.kind))
+        self.conn.commit()
 
     def _post_ready(self, document_id: int) -> None:
         from app.graph.edges import compute_edges_for_document

@@ -13,7 +13,7 @@ from app.search.fts import Fts5Index
 from app.search.embeddings import FastembedEmbedder
 from app.persistence.backends import make_backend
 from app.persistence.snapshot import restore_on_boot, snapshot_db
-from app.api import documents, search, graph, answer
+from app.api import documents, search, graph, answer, structured
 
 
 def create_app(settings: Settings | None = None, *, embedder=None) -> FastAPI:
@@ -55,6 +55,7 @@ def create_app(settings: Settings | None = None, *, embedder=None) -> FastAPI:
     app.include_router(search.router)
     app.include_router(graph.router)
     app.include_router(answer.router)
+    app.include_router(structured.router)
 
     @app.get("/healthz")
     def healthz() -> dict:

@@ -3,7 +3,7 @@ from pathlib import Path
 from docx import Document as Docx
 from docx.text.paragraph import Paragraph
 from docx.table import Table
-from app.models import ParsedDoc, TextBlock
+from app.models import ParsedDoc, TextBlock, Table as DocTable
 from app.errors import CorruptFileError, NoExtractableTextError
 
 
@@ -16,7 +16,9 @@ class DocxParser:
         except Exception as e:
             raise CorruptFileError(f"unreadable DOCX: {e}")
         blocks: list[TextBlock] = []
+        tables: list[DocTable] = []
         heading = None
+        tnum = 0
         for item in d.iter_inner_content():          # preserves interleaved order
             if isinstance(item, Paragraph):
                 text = item.text.strip()
@@ -26,9 +28,14 @@ class DocxParser:
                     heading = text
                 blocks.append(TextBlock(text=text, kind="prose", heading=heading))
             elif isinstance(item, Table):
-                rows = ["\t".join(c.text for c in row.cells) for row in item.rows]
-                if rows:
-                    blocks.append(TextBlock(text="\n".join(rows), kind="table", heading=heading))
+                grid = [[c.text.strip() for c in row.cells] for row in item.rows]
+                grid = [r for r in grid if any(r)]
+                if grid:
+                    blocks.append(TextBlock(text="\n".join("\t".join(r) for r in grid),
+                                            kind="table", heading=heading))
+                    tnum += 1
+                    tables.append(DocTable(name=heading or f"Table {tnum}",
+                                           columns=grid[0], rows=grid[1:], location=heading))
         if not blocks:
             raise NoExtractableTextError("no extractable text")
-        return ParsedDoc(text_blocks=blocks, metadata={}, warnings=[])
+        return ParsedDoc(text_blocks=blocks, metadata={}, warnings=[], tables=tables)

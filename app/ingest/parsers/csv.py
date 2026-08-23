@@ -1,7 +1,7 @@
 from __future__ import annotations
 import csv as _csv
 from pathlib import Path
-from app.models import ParsedDoc, TextBlock
+from app.models import ParsedDoc, TextBlock, Table
 from app.errors import EmptyDocumentError
 
 
@@ -16,6 +16,12 @@ class CsvParser:
             dialect = _csv.Sniffer().sniff(raw[:2048], delimiters=",;\t|")
         except _csv.Error:
             dialect = _csv.excel
-        rows = [",".join(r) for r in _csv.reader(raw.splitlines(), dialect)]
-        return ParsedDoc(text_blocks=[TextBlock(text="\n".join(rows), kind="table",
-                                                location="rows")], metadata={}, warnings=[])
+        rows = [list(r) for r in _csv.reader(raw.splitlines(), dialect)]
+        rows = [r for r in rows if any(c.strip() for c in r)]
+        if not rows:
+            raise EmptyDocumentError("no rows")
+        columns, data = rows[0], rows[1:]
+        text = "\n".join(",".join(r) for r in rows)
+        tables = [Table(name="CSV", columns=columns, rows=data, location="rows")]
+        return ParsedDoc(text_blocks=[TextBlock(text=text, kind="table", location="rows")],
+                         metadata={}, warnings=[], tables=tables)

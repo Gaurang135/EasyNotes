@@ -47,6 +47,32 @@ CREATE TABLE IF NOT EXISTS similarity_edges (
 );
 CREATE INDEX IF NOT EXISTS idx_edges_dst ON similarity_edges(dst_chunk_id);
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT);
+
+-- Structured extraction (Mode A: precise/defined queries) --------------------
+CREATE TABLE IF NOT EXISTS tables (
+  id INTEGER PRIMARY KEY,
+  document_id INTEGER NOT NULL REFERENCES documents(id),
+  name TEXT NOT NULL,
+  columns TEXT NOT NULL,          -- JSON array of name/type column defs
+  location TEXT,
+  row_count INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_tables_doc ON tables(document_id);
+CREATE TABLE IF NOT EXISTS table_rows (
+  table_id INTEGER NOT NULL REFERENCES tables(id),
+  row_index INTEGER NOT NULL,
+  data TEXT NOT NULL              -- JSON array of cell strings
+);
+CREATE INDEX IF NOT EXISTS idx_rows_table ON table_rows(table_id);
+CREATE TABLE IF NOT EXISTS fields (
+  id INTEGER PRIMARY KEY,
+  document_id INTEGER NOT NULL REFERENCES documents(id),
+  key TEXT NOT NULL,
+  value TEXT NOT NULL,
+  kind TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_fields_doc ON fields(document_id);
+CREATE INDEX IF NOT EXISTS idx_fields_kind ON fields(kind);
 """
 
 
@@ -111,6 +137,12 @@ def delete_document(conn: sqlite3.Connection, document_id: int) -> None:
             if getattr(conn, "vec_available", False):
                 conn.execute(f"DELETE FROM chunk_vectors WHERE chunk_id IN ({qs})", ids)
         conn.execute("DELETE FROM chunks WHERE document_id=?", (document_id,))  # triggers clean FTS
+        tids = [r[0] for r in conn.execute(
+            "SELECT id FROM tables WHERE document_id=?", (document_id,))]
+        for tid in tids:
+            conn.execute("DELETE FROM table_rows WHERE table_id=?", (tid,))
+        conn.execute("DELETE FROM tables WHERE document_id=?", (document_id,))
+        conn.execute("DELETE FROM fields WHERE document_id=?", (document_id,))
         conn.execute("DELETE FROM documents WHERE id=?", (document_id,))
         conn.commit()
     except Exception:
