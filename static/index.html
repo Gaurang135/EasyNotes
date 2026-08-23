@@ -16,50 +16,21 @@
   <header class="masthead">
     <div class="brand">
       <span class="spark" aria-hidden="true"></span>
-      <div>
-        <h1>EasyNotes</h1>
-        <p class="tag">Dump any file — find it in plain English.</p>
-      </div>
+      <div><h1>EasyNotes</h1><p class="tag">Dump any file — query it in plain English or precise filters.</p></div>
     </div>
     <nav class="tabs" id="tabs">
       <span class="tab-glow" id="tab-glow" aria-hidden="true"></span>
-      <button class="tab is-active" data-view="add">Add</button>
-      <button class="tab" data-view="search">Search</button>
+      <button class="tab is-active" data-view="search">Search</button>
+      <button class="tab" data-view="data">Data</button>
       <button class="tab" data-view="graph">Graph</button>
+      <button class="tab" data-view="add">Add</button>
     </nav>
   </header>
 
   <main>
-    <!-- ADD -->
-    <section id="view-add" class="view is-active">
-      <div class="segmented" id="add-modes">
-        <span class="seg-glow" id="seg-glow" aria-hidden="true"></span>
-        <button class="seg is-active" data-mode="file">Upload files</button>
-        <button class="seg" data-mode="text">Paste text</button>
-      </div>
-
-      <div id="pane-file" class="pane is-active">
-        <label id="drop" class="drop">
-          <input type="file" id="file-input" multiple hidden>
-          <span class="drop-ring" aria-hidden="true"></span>
-          <span class="drop-arrow" aria-hidden="true">↑</span>
-          <span class="drop-title">Drag &amp; drop, or click to browse</span>
-          <span class="drop-formats">PDF · DOCX · PPTX · XLSX · CSV · MD · TXT</span>
-        </label>
-      </div>
-
-      <div id="pane-text" class="pane">
-        <input id="paste-title" class="field" placeholder="Give it a title">
-        <textarea id="paste-body" class="field" rows="7" placeholder="Paste or type anything…"></textarea>
-        <button id="paste-submit" class="btn btn-primary">Add note</button>
-      </div>
-
-      <div class="section-label"><span>Library</span><span id="lib-count" class="count"></span></div>
-      <ul id="recent" class="recent"></ul>
-    </section>
-
-    <!-- SEARCH -->
-    <section id="view-search" class="view">
+    <!-- SEARCH (dashboard landing) -->
+    <section id="view-search" class="view is-active">
+      <div class="stats" id="stats"></div>
       <form id="search-form" class="searchbar">
         <div class="search-input">
           <span class="search-icon" aria-hidden="true">⌕</span>
@@ -73,18 +44,49 @@
         </div>
         <button class="btn btn-primary">Search</button>
       </form>
-      <div id="results" class="results">
-        <p class="empty">Your results will appear here.</p>
+      <div id="results" class="results"><p class="empty">Search across everything you've added — or open <b>Data</b> for precise, spreadsheet-style filtering.</p></div>
+    </section>
+
+    <!-- DATA (structured / Mode A) -->
+    <section id="view-data" class="view">
+      <div class="segmented" id="data-modes">
+        <span class="seg-glow" id="dseg-glow" aria-hidden="true"></span>
+        <button class="seg is-active" data-dmode="tables">Tables</button>
+        <button class="seg" data-dmode="fields">Fields</button>
+      </div>
+
+      <div id="pane-tables" class="pane is-active">
+        <div class="tablebar">
+          <select id="table-pick" class="field"></select>
+        </div>
+        <div id="table-controls" class="controls" hidden>
+          <select id="f-col" class="mini"></select>
+          <select id="f-op" class="mini">
+            <option value="contains">contains</option>
+            <option value="eq">equals</option>
+            <option value="gte">≥</option>
+            <option value="lte">≤</option>
+          </select>
+          <input id="f-val" class="mini grow" placeholder="value…">
+          <span class="ctl-sep">sort</span>
+          <select id="s-col" class="mini"><option value="">—</option></select>
+          <select id="s-dir" class="mini"><option value="asc">↑</option><option value="desc">↓</option></select>
+          <button id="f-apply" class="btn btn-primary btn-sm">Apply</button>
+        </div>
+        <div id="table-view" class="tablewrap"><p class="empty">No tables yet — add a CSV, spreadsheet, or a doc with tables.</p></div>
+      </div>
+
+      <div id="pane-fields" class="pane">
+        <div class="chips" id="field-kinds"></div>
+        <div class="tablewrap"><table class="grid" id="fields-grid"></table></div>
       </div>
     </section>
 
     <!-- GRAPH -->
     <section id="view-graph" class="view">
       <form id="graph-form" class="searchbar">
-        <div class="search-input">
-          <span class="search-icon" aria-hidden="true">✦</span>
-          <input id="graph-q" placeholder="Light up nodes matching a query… (optional)" autocomplete="off">
-        </div>
+        <div class="search-input"><span class="search-icon" aria-hidden="true">✦</span>
+          <input id="graph-q" placeholder="Light up nodes matching a query… (optional)" autocomplete="off"></div>
         <button class="btn btn-primary">Illuminate</button>
         <a href="/graph/export" class="btn btn-ghost">Export</a>
       </form>
@@ -95,10 +97,34 @@
       </div>
       <div id="cy-tip" class="legend"></div>
     </section>
+
+    <!-- ADD (input, secondary) -->
+    <section id="view-add" class="view">
+      <div class="segmented" id="add-modes">
+        <span class="seg-glow" id="seg-glow" aria-hidden="true"></span>
+        <button class="seg is-active" data-mode="file">Upload files</button>
+        <button class="seg" data-mode="text">Paste text</button>
+      </div>
+      <div id="pane-file" class="pane is-active">
+        <label id="drop" class="drop">
+          <input type="file" id="file-input" multiple hidden>
+          <span class="drop-ring" aria-hidden="true"></span>
+          <span class="drop-arrow" aria-hidden="true">↑</span>
+          <span class="drop-title">Drag &amp; drop, or click to browse</span>
+          <span class="drop-formats">PDF · DOCX · PPTX · XLSX · CSV · MD · TXT</span>
+        </label>
+      </div>
+      <div id="pane-text" class="pane">
+        <input id="paste-title" class="field" placeholder="Give it a title">
+        <textarea id="paste-body" class="field" rows="7" placeholder="Paste or type anything…"></textarea>
+        <button id="paste-submit" class="btn btn-primary">Add note</button>
+      </div>
+      <div class="section-label"><span>Library</span><span id="lib-count" class="count"></span></div>
+      <ul id="recent" class="recent"></ul>
+    </section>
   </main>
 
   <div id="toasts" class="toasts" aria-live="polite"></div>
-
   <script src="/cytoscape.min.js" onerror="window.__noCyto=true"></script>
   <script src="/app.js"></script>
 </body>
