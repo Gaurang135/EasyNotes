@@ -1,0 +1,12 @@
+services:
+  easynotes:
+    build: .
+    image: easynotes:local
+    ports:
+      - "${PORT:-8000}:8000"
+    environment:
+      SNAPSHOT_BACKEND: "none"
+    volumes:
+      - easynotes_data:/data
+volumes:
+  easynotes_data:

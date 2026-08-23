@@ -8,7 +8,8 @@ class Settings:
     data_dir: str = "./data"
     max_upload_mb: int = 25
     embed_model: str = "BAAI/bge-small-en-v1.5"
-    embed_model_path: str | None = None      # baked ONNX dir; enables offline load
+    embed_model_path: str | None = None      # baked snapshot dir; used for the tokenizer
+    embed_cache_dir: str | None = None       # HF cache root; enables offline load with HF_HUB_OFFLINE
     embed_threads: int = 1
     embed_batch_size: int = 16
     snapshot_backend: str = "none"           # none | local | s3
@@ -29,6 +30,7 @@ class Settings:
             max_upload_mb=int(g("MAX_UPLOAD_MB", "25")),
             embed_model=g("EMBED_MODEL", "BAAI/bge-small-en-v1.5"),
             embed_model_path=g("EMBED_MODEL_PATH") or None,
+            embed_cache_dir=g("EMBED_CACHE_DIR") or None,
             embed_threads=int(g("EMBED_THREADS", "1")),
             embed_batch_size=int(g("EMBED_BATCH_SIZE", "16")),
             snapshot_backend=g("SNAPSHOT_BACKEND", "none"),

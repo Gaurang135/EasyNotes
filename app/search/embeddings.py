@@ -36,11 +36,11 @@ class FastembedEmbedder:
 
     def __init__(self, settings):
         from fastembed import TextEmbedding
-        kwargs = {"threads": settings.embed_threads}
-        if settings.embed_model_path:
-            kwargs["specific_model_path"] = settings.embed_model_path
-        else:
-            kwargs["model_name"] = settings.embed_model
+        # Offline in the image via HF_HUB_OFFLINE=1 + a pre-populated cache_dir.
+        # specific_model_path does NOT bypass fastembed's network check in 0.5.x.
+        kwargs = {"model_name": settings.embed_model, "threads": settings.embed_threads}
+        if settings.embed_cache_dir:
+            kwargs["cache_dir"] = settings.embed_cache_dir
         # never pass parallel= : it forks whole model copies (OOM on 512MB)
         self._model = TextEmbedding(**kwargs)
         self._batch = settings.embed_batch_size
