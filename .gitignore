@@ -7,3 +7,6 @@ data/
 *.db-shm
 models/
 .pytest_cache/
+
+# local-only helper, never commit
+push_all.sh
