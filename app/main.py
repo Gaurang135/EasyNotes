@@ -10,6 +10,8 @@ from app.ingest.pipeline import IngestionPipeline
 from app.search.vectors import make_vector_index
 from app.search.fts import Fts5Index
 from app.search.embeddings import FastembedEmbedder
+from app.persistence.backends import make_backend
+from app.persistence.snapshot import restore_on_boot, snapshot_db
 from app.api import documents, search, graph
 
 
@@ -17,10 +19,13 @@ def create_app(settings: Settings | None = None, *, embedder=None) -> FastAPI:
     settings = settings or Settings.from_env()
     data_dir = Path(settings.data_dir)
     data_dir.mkdir(parents=True, exist_ok=True)
+    backend = make_backend(settings)
+    db_path = str(data_dir / "easynotes.db")
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
-        conn = db.connect(str(data_dir / "easynotes.db"))
+        restore_on_boot(backend, db_path)          # ephemeral-tier durability
+        conn = db.connect(db_path)
         db.init_schema(conn)
         db.mark_interrupted(conn)
         conn.execute("INSERT OR REPLACE INTO meta(key,value) VALUES('data_dir',?)",
@@ -32,12 +37,17 @@ def create_app(settings: Settings | None = None, *, embedder=None) -> FastAPI:
         app.state.embedder = embedder or FastembedEmbedder(settings)
         app.state.vector_index = make_vector_index(conn)
         app.state.fts_index = Fts5Index(conn)
+        app.state.backend = backend
+        pipeline_backend = None if settings.snapshot_backend == "none" else backend
         app.state.pipeline = IngestionPipeline(
             conn, PARSERS, make_token_counter(settings),
             app.state.embedder, app.state.vector_index,
-            edge_floor=settings.edge_floor)
+            backend=pipeline_backend, db_path=db_path, edge_floor=settings.edge_floor)
         yield
-        conn.close()
+        try:
+            snapshot_db(conn, backend, db_path)     # final snapshot on shutdown
+        finally:
+            conn.close()
 
     app = FastAPI(title="EasyNotes", lifespan=lifespan)
     app.include_router(documents.router)

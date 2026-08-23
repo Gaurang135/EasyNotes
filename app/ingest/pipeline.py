@@ -60,7 +60,10 @@ class IngestionPipeline:
     def _post_ready(self, document_id: int) -> None:
         from app.graph.edges import compute_edges_for_document
         compute_edges_for_document(self.conn, self.vector_index, document_id, floor=self.edge_floor)
-        # snapshot (Task 18) hooks in here too.
+        # snapshot on the write event so the data-loss window on an uploaded doc is ~zero
+        if self.backend is not None and self.db_path:
+            from app.persistence.snapshot import snapshot_db
+            snapshot_db(self.conn, self.backend, self.db_path)
 
     def _data_dir(self) -> str:
         return self.conn.execute("SELECT value FROM meta WHERE key='data_dir'").fetchone()[0]
