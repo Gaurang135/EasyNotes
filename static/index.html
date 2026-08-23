@@ -1,4 +1,105 @@
 <!doctype html>
-<title>EasyNotes</title>
-<h1>EasyNotes</h1>
-<p>UI arrives in Task 19. API is live: <a href="/docs">/docs</a>.</p>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>EasyNotes</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,900&family=Instrument+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <div class="mesh" aria-hidden="true"></div>
+  <div class="grain" aria-hidden="true"></div>
+
+  <header class="masthead">
+    <div class="brand">
+      <span class="spark" aria-hidden="true"></span>
+      <div>
+        <h1>EasyNotes</h1>
+        <p class="tag">Dump any file — find it in plain English.</p>
+      </div>
+    </div>
+    <nav class="tabs" id="tabs">
+      <span class="tab-glow" id="tab-glow" aria-hidden="true"></span>
+      <button class="tab is-active" data-view="add">Add</button>
+      <button class="tab" data-view="search">Search</button>
+      <button class="tab" data-view="graph">Graph</button>
+    </nav>
+  </header>
+
+  <main>
+    <!-- ADD -->
+    <section id="view-add" class="view is-active">
+      <div class="segmented" id="add-modes">
+        <span class="seg-glow" id="seg-glow" aria-hidden="true"></span>
+        <button class="seg is-active" data-mode="file">Upload files</button>
+        <button class="seg" data-mode="text">Paste text</button>
+      </div>
+
+      <div id="pane-file" class="pane is-active">
+        <label id="drop" class="drop">
+          <input type="file" id="file-input" multiple hidden>
+          <span class="drop-ring" aria-hidden="true"></span>
+          <span class="drop-arrow" aria-hidden="true">↑</span>
+          <span class="drop-title">Drag &amp; drop, or click to browse</span>
+          <span class="drop-formats">PDF · DOCX · PPTX · XLSX · CSV · MD · TXT</span>
+        </label>
+      </div>
+
+      <div id="pane-text" class="pane">
+        <input id="paste-title" class="field" placeholder="Give it a title">
+        <textarea id="paste-body" class="field" rows="7" placeholder="Paste or type anything…"></textarea>
+        <button id="paste-submit" class="btn btn-primary">Add note</button>
+      </div>
+
+      <div class="section-label"><span>Library</span><span id="lib-count" class="count"></span></div>
+      <ul id="recent" class="recent"></ul>
+    </section>
+
+    <!-- SEARCH -->
+    <section id="view-search" class="view">
+      <form id="search-form" class="searchbar">
+        <div class="search-input">
+          <span class="search-icon" aria-hidden="true">⌕</span>
+          <input id="q" placeholder="Ask anything about your documents…" autocomplete="off">
+        </div>
+        <div class="modepick" id="modepick">
+          <span class="mode-glow" id="mode-glow" aria-hidden="true"></span>
+          <button type="button" class="mode is-active" data-m="hybrid">Hybrid</button>
+          <button type="button" class="mode" data-m="semantic">Meaning</button>
+          <button type="button" class="mode" data-m="keyword">Keyword</button>
+        </div>
+        <button class="btn btn-primary">Search</button>
+      </form>
+      <div id="results" class="results">
+        <p class="empty">Your results will appear here.</p>
+      </div>
+    </section>
+
+    <!-- GRAPH -->
+    <section id="view-graph" class="view">
+      <form id="graph-form" class="searchbar">
+        <div class="search-input">
+          <span class="search-icon" aria-hidden="true">✦</span>
+          <input id="graph-q" placeholder="Light up nodes matching a query… (optional)" autocomplete="off">
+        </div>
+        <button class="btn btn-primary">Illuminate</button>
+        <a href="/graph/export" class="btn btn-ghost">Export</a>
+      </form>
+      <div class="stage">
+        <div id="cy"></div>
+        <div id="cy-empty" class="stage-empty">No documents yet — add a few and watch them connect.</div>
+        <div id="cy-fallback" class="stage-empty" hidden>Graph engine unavailable.</div>
+      </div>
+      <div id="cy-tip" class="legend"></div>
+    </section>
+  </main>
+
+  <div id="toasts" class="toasts" aria-live="polite"></div>
+
+  <script src="/cytoscape.min.js" onerror="window.__noCyto=true"></script>
+  <script src="/app.js"></script>
+</body>
+</html>

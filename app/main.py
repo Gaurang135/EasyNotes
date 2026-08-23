@@ -2,6 +2,7 @@ from __future__ import annotations
 from pathlib import Path
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
 from app.settings import Settings
 from app import db
 from app.ingest.parsers import PARSERS
@@ -58,6 +59,12 @@ def create_app(settings: Settings | None = None, *, embedder=None) -> FastAPI:
     @app.get("/healthz")
     def healthz() -> dict:
         return {"status": "ok"}
+
+    # Mount the static UI last so API routes take precedence.
+    import os
+    static_dir = os.path.join(os.path.dirname(__file__), "..", "static")
+    if os.path.isdir(static_dir):
+        app.mount("/", StaticFiles(directory=static_dir, html=True), name="static")
 
     return app
 
