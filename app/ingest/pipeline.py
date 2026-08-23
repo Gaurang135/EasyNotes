@@ -11,7 +11,7 @@ log = logging.getLogger("easynotes.pipeline")
 
 class IngestionPipeline:
     def __init__(self, conn, parsers, count_tokens, embedder, vector_index,
-                 backend=None, db_path=None):
+                 backend=None, db_path=None, edge_floor=0.35):
         self.conn = conn
         self.parsers = parsers
         self.count_tokens = count_tokens
@@ -19,6 +19,7 @@ class IngestionPipeline:
         self.vector_index = vector_index
         self.backend = backend
         self.db_path = db_path
+        self.edge_floor = edge_floor
 
     def ingest(self, document_id: int) -> None:
         from app.ingest.chunker import chunk_document
@@ -57,8 +58,9 @@ class IngestionPipeline:
             db.set_status(self.conn, document_id, Status.FAILED, error=f"internal error: {e}")
 
     def _post_ready(self, document_id: int) -> None:
-        # graph edges (Task 16) and snapshot (Task 18) hook in here later.
-        pass
+        from app.graph.edges import compute_edges_for_document
+        compute_edges_for_document(self.conn, self.vector_index, document_id, floor=self.edge_floor)
+        # snapshot (Task 18) hooks in here too.
 
     def _data_dir(self) -> str:
         return self.conn.execute("SELECT value FROM meta WHERE key='data_dir'").fetchone()[0]
