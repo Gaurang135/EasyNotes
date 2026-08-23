@@ -18,7 +18,6 @@ class Settings:
     snapshot_access_key: str | None = None
     snapshot_secret_key: str | None = None
     snapshot_interval_s: int = 300
-    edge_floor: float = 0.35
 
     @staticmethod
     def from_env(overrides: dict | None = None) -> "Settings":
@@ -40,5 +39,4 @@ class Settings:
             snapshot_access_key=g("SNAPSHOT_ACCESS_KEY") or None,
             snapshot_secret_key=g("SNAPSHOT_SECRET_KEY") or None,
             snapshot_interval_s=int(g("SNAPSHOT_INTERVAL_S", "300")),
-            edge_floor=float(g("EDGE_SIMILARITY_FLOOR", "0.35")),
         )

@@ -16,7 +16,7 @@ _INGEST_LOCK = threading.Lock()
 
 class IngestionPipeline:
     def __init__(self, conn, parsers, count_tokens, embedder, vector_index,
-                 backend=None, db_path=None, edge_floor=0.35):
+                 backend=None, db_path=None):
         self.conn = conn
         self.parsers = parsers
         self.count_tokens = count_tokens
@@ -24,7 +24,6 @@ class IngestionPipeline:
         self.vector_index = vector_index
         self.backend = backend
         self.db_path = db_path
-        self.edge_floor = edge_floor
 
     def ingest(self, document_id: int) -> None:
         with _INGEST_LOCK:
@@ -90,8 +89,6 @@ class IngestionPipeline:
         self.conn.commit()
 
     def _post_ready(self, document_id: int) -> None:
-        from app.graph.edges import compute_edges_for_document
-        compute_edges_for_document(self.conn, self.vector_index, document_id, floor=self.edge_floor)
         # snapshot on the write event so the data-loss window on an uploaded doc is ~zero
         if self.backend is not None and self.db_path:
             from app.persistence.snapshot import snapshot_db

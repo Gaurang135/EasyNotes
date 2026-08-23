@@ -21,6 +21,25 @@ def stats(state=Depends(get_state)):
     }
 
 
+@router.get("/documents/{doc_id}/detail")
+def document_detail(doc_id: int, state=Depends(get_state)):
+    """Everything extracted from one messy document: fields, tables, text preview."""
+    c = state.conn
+    d = c.execute("SELECT id,title,file_type,status,error FROM documents WHERE id=?",
+                  (doc_id,)).fetchone()
+    if not d:
+        raise HTTPException(404, "not found")
+    fields = [{"key": r[0], "value": r[1], "kind": r[2]} for r in c.execute(
+        "SELECT key,value,kind FROM fields WHERE document_id=? ORDER BY id", (doc_id,))]
+    tables = [{"id": r[0], "name": r[1], "columns": json.loads(r[2]), "row_count": r[3]}
+              for r in c.execute(
+        "SELECT id,name,columns,row_count FROM tables WHERE document_id=? ORDER BY id", (doc_id,))]
+    preview = [r[0] for r in c.execute(
+        "SELECT text FROM chunks WHERE document_id=? ORDER BY seq LIMIT 3", (doc_id,))]
+    return {"id": d[0], "title": d[1], "file_type": d[2], "status": d[3], "error": d[4],
+            "fields": fields, "tables": tables, "text_preview": "\n\n".join(preview)}
+
+
 @router.get("/tables")
 def list_tables(state=Depends(get_state)):
     rows = state.conn.execute(

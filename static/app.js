@@ -259,22 +259,38 @@ async function renderGraph(q) {
   if (window.__noCyto || typeof cytoscape === "undefined") { $("#cy").style.display = "none"; $("#cy-fallback").hidden = false; return; }
   const g = await (await fetch(q ? `/graph?q=${encodeURIComponent(q)}` : "/graph")).json();
   $("#cy-empty").style.display = g.nodes.length ? "none" : "flex";
-  $("#cy-tip").textContent = g.nodes.length ? `${g.nodes.length} documents · ${g.edges.length} connections${q ? " · highlighting matches" : ""}` : "";
+  const cc = g.counts || {};
+  $("#cy-tip").textContent = g.nodes.length
+    ? `${cc.documents} documents · ${cc.entities} entities · ${cc.shared} shared across docs${q ? " · highlighting matches" : ""}`
+    : "";
   const els = [...g.nodes.map((n) => ({ data: n.data })), ...g.edges.map((e) => ({ data: e.data }))];
   if (cy) cy.destroy();
   cy = cytoscape({
-    container: $("#cy"), elements: els, minZoom: 0.3, maxZoom: 2.5,
+    container: $("#cy"), elements: els, minZoom: 0.2, maxZoom: 2.5,
     style: [
-      { selector: "node", style: { "background-color": "data(color)", label: "data(label)", color: "#dfe3ec",
-        "font-size": 11, "font-family": "Instrument Sans, sans-serif", width: "mapData(size,1,30,20,66)", height: "mapData(size,1,30,20,66)",
-        "text-valign": "bottom", "text-margin-y": 6, "text-max-width": 120, "text-wrap": "ellipsis", "border-width": 2,
-        "border-color": "rgba(255,255,255,.15)", opacity: q ? 0.22 : 1, "transition-property": "opacity", "transition-duration": "300ms" } },
-      { selector: "node[?matched]", style: { opacity: 1, "border-width": 4, "border-color": "#f2a65a", "shadow-blur": 30, "shadow-color": "#f2a65a", "shadow-opacity": 0.9 } },
-      { selector: "edge", style: { width: "data(weight)", "line-color": "#3a4356", "curve-style": "bezier", opacity: q ? 0.12 : 0.5, "transition-property": "opacity", "transition-duration": "300ms" } },
+      { selector: "node[kind='doc']", style: { "background-color": "#8892a6", shape: "round-rectangle",
+        label: "data(label)", color: "#eef0f5", "font-size": 11, "font-weight": 600, "font-family": "Instrument Sans, sans-serif",
+        width: 30, height: 30, "text-valign": "bottom", "text-margin-y": 5, "text-max-width": 130, "text-wrap": "ellipsis",
+        "border-width": 2, "border-color": "rgba(255,255,255,.2)", opacity: q ? 0.3 : 1,
+        "transition-property": "opacity", "transition-duration": "300ms" } },
+      { selector: "node[kind='entity']", style: { "background-color": "data(color)", shape: "ellipse",
+        label: "data(label)", color: "#c9cdd8", "font-size": 10, "font-family": "JetBrains Mono, monospace",
+        width: "mapData(size,1,6,16,44)", height: "mapData(size,1,6,16,44)",
+        "text-valign": "bottom", "text-margin-y": 4, "text-max-width": 110, "text-wrap": "ellipsis",
+        "border-width": 0, opacity: q ? 0.28 : 0.95, "transition-property": "opacity", "transition-duration": "300ms" } },
+      { selector: "node[?shared]", style: { "border-width": 2, "border-color": "rgba(255,255,255,.35)" } },
+      { selector: "node[?matched]", style: { opacity: 1, "border-width": 4, "border-color": "#f2a65a",
+        "shadow-blur": 28, "shadow-color": "#f2a65a", "shadow-opacity": 0.9 } },
+      { selector: "edge", style: { width: 1.4, "line-color": "#333c4c", "curve-style": "bezier",
+        opacity: q ? 0.1 : 0.4, "transition-property": "opacity", "transition-duration": "300ms" } },
     ],
-    layout: { name: "cose", animate: true, animationDuration: 700, idealEdgeLength: 120, nodeRepulsion: 9000 },
+    layout: { name: "cose", animate: true, animationDuration: 700, idealEdgeLength: 90, nodeRepulsion: 8000 },
   });
-  cy.on("tap", "node", (e) => { const d = e.target.data(); toast(`${d.label} — ${d.size} chunk${d.size > 1 ? "s" : ""}`, ""); });
+  cy.on("tap", "node", (e) => {
+    const d = e.target.data();
+    if (d.kind === "doc") openDetail(d.id.slice(1));
+    else toast(`${d.label} — appears in ${d.docs} document${d.docs > 1 ? "s" : ""}`, "");
+  });
 }
 
 const STOP = new Set("a an the is are was were be been am im i who what when where why how which of to in on at for and or but if it its this that as by with from do does did can could will would my me you your we".split(" "));

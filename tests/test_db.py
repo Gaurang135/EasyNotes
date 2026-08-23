@@ -13,7 +13,7 @@ def test_schema_creates_all_tables(tmp_path):
     conn = _mk(tmp_path)
     names = {r[0] for r in conn.execute(
         "SELECT name FROM sqlite_master WHERE type='table'")}
-    assert {"documents", "chunks", "chunks_fts", "similarity_edges", "meta"} <= names
+    assert {"documents", "chunks", "chunks_fts", "tables", "table_rows", "fields", "meta"} <= names
 
 
 def test_wal_enabled(tmp_path):
@@ -36,11 +36,9 @@ def test_delete_document_clears_all_tables(tmp_path):
     conn.execute("INSERT INTO documents(id,filename,title,file_type,size,status,content_hash,uploaded_at) "
                  "VALUES (1,'a.txt','a','txt',3,'ready','h','2026-01-01')")
     conn.execute("INSERT INTO chunks(id,document_id,seq,text,embed_text) VALUES (1,1,0,'hello','hello')")
-    conn.execute("INSERT INTO similarity_edges(src_chunk_id,dst_chunk_id,score) VALUES (1,2,0.5)")
     conn.commit()
     db.delete_document(conn, 1)
     assert conn.execute("SELECT count(*) FROM chunks").fetchone()[0] == 0
-    assert conn.execute("SELECT count(*) FROM similarity_edges").fetchone()[0] == 0
     # FTS integrity must survive the delete
     conn.execute("INSERT INTO chunks_fts(chunks_fts) VALUES('integrity-check')")
 

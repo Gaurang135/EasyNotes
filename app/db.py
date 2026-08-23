@@ -39,13 +39,6 @@ END;
 CREATE TRIGGER IF NOT EXISTS chunks_ad AFTER DELETE ON chunks BEGIN
   INSERT INTO chunks_fts(chunks_fts, rowid, text) VALUES('delete', old.id, old.text);
 END;
-CREATE TABLE IF NOT EXISTS similarity_edges (
-  src_chunk_id INTEGER NOT NULL,
-  dst_chunk_id INTEGER NOT NULL,
-  score REAL NOT NULL,
-  PRIMARY KEY (src_chunk_id, dst_chunk_id)
-);
-CREATE INDEX IF NOT EXISTS idx_edges_dst ON similarity_edges(dst_chunk_id);
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT);
 
 -- Structured extraction (Mode A: precise/defined queries) --------------------
@@ -130,12 +123,9 @@ def delete_document(conn: sqlite3.Connection, document_id: int) -> None:
         conn.execute("BEGIN")
         ids = [r[0] for r in conn.execute(
             "SELECT id FROM chunks WHERE document_id=?", (document_id,))]
-        if ids:
+        if ids and getattr(conn, "vec_available", False):
             qs = ",".join("?" * len(ids))
-            conn.execute(f"DELETE FROM similarity_edges WHERE src_chunk_id IN ({qs})", ids)
-            conn.execute(f"DELETE FROM similarity_edges WHERE dst_chunk_id IN ({qs})", ids)
-            if getattr(conn, "vec_available", False):
-                conn.execute(f"DELETE FROM chunk_vectors WHERE chunk_id IN ({qs})", ids)
+            conn.execute(f"DELETE FROM chunk_vectors WHERE chunk_id IN ({qs})", ids)
         conn.execute("DELETE FROM chunks WHERE document_id=?", (document_id,))  # triggers clean FTS
         tids = [r[0] for r in conn.execute(
             "SELECT id FROM tables WHERE document_id=?", (document_id,))]

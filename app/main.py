@@ -43,7 +43,7 @@ def create_app(settings: Settings | None = None, *, embedder=None) -> FastAPI:
         app.state.pipeline = IngestionPipeline(
             conn, PARSERS, make_token_counter(settings),
             app.state.embedder, app.state.vector_index,
-            backend=pipeline_backend, db_path=db_path, edge_floor=settings.edge_floor)
+            backend=pipeline_backend, db_path=db_path)
         yield
         try:
             snapshot_db(conn, backend, db_path)     # final snapshot on shutdown

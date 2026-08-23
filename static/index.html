@@ -22,7 +22,7 @@
       <span class="tab-glow" id="tab-glow" aria-hidden="true"></span>
       <button class="tab is-active" data-view="search">Search</button>
       <button class="tab" data-view="data">Data</button>
-      <button class="tab" data-view="graph">Graph</button>
+      <button class="tab" data-view="graph">Connections</button>
       <button class="tab" data-view="add">Add</button>
     </nav>
   </header>
@@ -86,12 +86,12 @@
     <section id="view-graph" class="view">
       <form id="graph-form" class="searchbar">
         <div class="search-input"><span class="search-icon" aria-hidden="true">✦</span>
-          <input id="graph-q" placeholder="Light up nodes matching a query… (optional)" autocomplete="off"></div>
-        <button class="btn btn-primary">Illuminate</button>
+          <input id="graph-q" placeholder="Highlight an entity — vendor, email, date… (optional)" autocomplete="off"></div>
+        <button class="btn btn-primary">Highlight</button>
       </form>
       <div class="stage">
         <div id="cy"></div>
-        <div id="cy-empty" class="stage-empty">No documents yet — add a few and watch them connect.</div>
+        <div id="cy-empty" class="stage-empty">Add documents with shared vendors, emails, or dates to see how they connect.</div>
         <div id="cy-fallback" class="stage-empty" hidden>Graph engine unavailable.</div>
       </div>
       <div id="cy-tip" class="legend"></div>
