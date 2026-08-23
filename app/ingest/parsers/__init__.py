@@ -3,6 +3,11 @@ from typing import Protocol
 from pathlib import Path
 from app.models import ParsedDoc
 from app.ingest.parsers.text import TextParser
+from app.ingest.parsers.pdf import PdfParser
+from app.ingest.parsers.docx import DocxParser
+from app.ingest.parsers.pptx import PptxParser
+from app.ingest.parsers.xlsx import XlsxParser
+from app.ingest.parsers.csv import CsvParser
 
 
 class Parser(Protocol):
@@ -18,5 +23,5 @@ def _build_registry(*parsers) -> dict[str, "Parser"]:
     return reg
 
 
-# Parsers for pdf/docx/pptx/xlsx/csv are appended in Tasks 11-15.
-PARSERS: dict[str, "Parser"] = _build_registry(TextParser())
+PARSERS: dict[str, "Parser"] = _build_registry(
+    TextParser(), PdfParser(), DocxParser(), PptxParser(), XlsxParser(), CsvParser())
