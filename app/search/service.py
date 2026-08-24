@@ -156,6 +156,41 @@ def _passes_filter(conn, chunk_ids, flt: SearchFilter):
     return {r[0] for r in conn.execute(sql, params)}
 
 
+def _title_hits(conn, query: str, flt: SearchFilter) -> list[int]:
+    """A representative chunk per document whose TITLE matches the query's content terms,
+    best-match first. Document titles/filenames aren't in the body text, yet people query
+    by them ("sales", "team notes", "invoice_07"), so this leg makes titles searchable and
+    is fused (weighted) with keyword + semantic retrieval."""
+    terms = content_terms(query)
+    if not terms:
+        return []
+    sql = "SELECT id, title FROM documents WHERE status='ready'"
+    params: list = []
+    if flt.file_type:
+        sql += " AND file_type=?"; params.append(flt.file_type)
+    if flt.doc_id:
+        sql += " AND id=?"; params.append(flt.doc_id)
+    scored = []
+    for did, title in conn.execute(sql, params):
+        toks = re.findall(r"[a-z]+", (title or "").lower())   # "spec_0"→[spec], "Team Notes"→[team,notes]
+        n = 0
+        for t in terms:
+            ta = re.sub(r"[^a-z]", "", t)                     # alpha form of the query term
+            if ta and any(tok == ta or (len(tok) >= 4 and ta.startswith(tok))
+                          or (len(ta) >= 4 and tok.startswith(ta)) for tok in toks):
+                n += 1                                         # exact or 4+ char prefix (spec↔specification)
+        if n:
+            scored.append((n, did))
+    scored.sort(key=lambda x: -x[0])            # more matching terms rank higher
+    out = []
+    for _, did in scored:
+        row = conn.execute("SELECT id FROM chunks WHERE document_id=? ORDER BY seq LIMIT 1",
+                           (did,)).fetchone()
+        if row:
+            out.append(row[0])
+    return out
+
+
 def _snippet(text: str, query: str, width: int = 220) -> str:
     low = text.lower()
     # anchor on the most meaningful query term present, not the first stopword
@@ -202,7 +237,10 @@ def run_search(conn, embedder, vector_index, fts_index, *, query, mode, flt, lim
         sem = vector_index.search(qv, FUSION_DEPTH)
         allowed = _passes_filter(conn, [s.chunk_id for s in sem], flt)
         sem = [s for s in sem if s.chunk_id in allowed]
-        fused = rrf([[s.chunk_id for s in kw], [s.chunk_id for s in sem]])
+        title = _title_hits(conn, query, flt)          # make document titles searchable
+        # title match is high-precision, so it's weighted above a single body leg
+        fused = rrf([[s.chunk_id for s in kw], [s.chunk_id for s in sem], title],
+                    weights=[1.0, 1.0, 2.0])
         ordered = [cid for cid, _ in fused]
         scores = dict(fused)
     page = ordered[offset:offset + limit]
