@@ -99,7 +99,7 @@ for pure local use.
 | `GET /tables` · `GET /tables/{id}/rows?col=&op=&val=&sort=` | Structured tables + typed queries |
 | `GET /fields?kind=&q=` | Extracted key-value fields across all documents |
 | `GET /documents/{id}/detail` · `GET /documents/{id}/download` | Extracted structure · original file |
-| `POST /answer` | **501** — the LLM slot (see below) |
+| `POST /answer` | Grounded answer + citations (optional LLM; `501` until enabled) |
 | `GET /healthz` | Health check |
 
 Example:
@@ -115,7 +115,8 @@ curl "localhost:8000/search?q=refund%20policy&mode=hybrid"
 `EMBED_THREADS` (default 1), `EMBED_BATCH_SIZE`, `INGEST_MODE` (threaded|inline), and the
 snapshot block: `SNAPSHOT_BACKEND` (`none`|`local`|`s3`), `SNAPSHOT_ENDPOINT`,
 `SNAPSHOT_BUCKET`, `SNAPSHOT_ACCESS_KEY`, `SNAPSHOT_SECRET_KEY`,
-`SNAPSHOT_INTERVAL_S`.
+`SNAPSHOT_INTERVAL_S`. Optional grounded answers: `ANSWER_BASE_URL`, `ANSWER_API_KEY`,
+`ANSWER_MODEL` (see the Ask section below).
 
 ## Deploying to a free tier (Render + Cloudflare R2)
 
@@ -133,12 +134,32 @@ snapshots (10 GB free, free egress):
 The same image also runs anywhere with a real disk (Render Starter + disk, an
 Oracle Always-Free VM, or your own machine) with `SNAPSHOT_BACKEND=none`.
 
-## Why LLM-free? (and how to add an LLM later)
+## LLM-free by default — grounded "Ask" is an optional layer
 
-EasyNotes is the **retrieval** half of a RAG system with no generation stage —
-that keeps it free, private, and self-contained. `POST /answer` already exists as
-a `501` stub wired to the shared retrieval service, so enabling answer synthesis
-later is one module plus an API key, with no change to search. See `DECISIONS.md`.
+EasyNotes does the **hard, LLM-free half of RAG** — parsing, structured extraction,
+and hybrid retrieval — so it's fast, private, and $0 with no model at query time. The
+**generation** stage is a thin, optional layer behind `POST /answer` and the UI's
+**✦ Ask** mode: it retrieves the top passages and asks a model to compose a **grounded
+answer with citations**, or replies "I couldn't find that in your documents."
+
+It's **off by default** (returns `501` with instructions). Enable it with any
+OpenAI-compatible endpoint — no code change:
+
+```bash
+# Groq free tier (fast, free — great for a demo)
+export ANSWER_BASE_URL=https://api.groq.com/openai/v1
+export ANSWER_API_KEY=gsk_your_key
+export ANSWER_MODEL=llama-3.3-70b-versatile
+make run
+
+# …or fully local / offline via Ollama (no key)
+export ANSWER_BASE_URL=http://localhost:11434/v1
+export ANSWER_MODEL=llama3.2
+```
+
+Also works with OpenAI (`ANSWER_BASE_URL=https://api.openai.com/v1`, `ANSWER_MODEL=gpt-4o-mini`).
+Answers are grounded strictly in retrieved excerpts; the retrieval path is unchanged, so
+turning Ask on/off never affects search or the structured Data views. See `DECISIONS.md`.
 
 ## Development
 
