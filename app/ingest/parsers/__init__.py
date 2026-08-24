@@ -8,6 +8,8 @@ from app.ingest.parsers.docx import DocxParser
 from app.ingest.parsers.pptx import PptxParser
 from app.ingest.parsers.xlsx import XlsxParser
 from app.ingest.parsers.csv import CsvParser
+from app.ingest.parsers.json import JsonParser
+from app.ingest.parsers.html import HtmlParser
 
 
 class Parser(Protocol):
@@ -24,4 +26,5 @@ def _build_registry(*parsers) -> dict[str, "Parser"]:
 
 
 PARSERS: dict[str, "Parser"] = _build_registry(
-    TextParser(), PdfParser(), DocxParser(), PptxParser(), XlsxParser(), CsvParser())
+    TextParser(), PdfParser(), DocxParser(), PptxParser(), XlsxParser(), CsvParser(),
+    JsonParser(), HtmlParser())

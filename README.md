@@ -3,7 +3,7 @@
 **Dump any file, find it in plain English.**
 
 EasyNotes ingests unstructured/semi-structured documents — PDF, DOCX, PPTX,
-XLSX, CSV, Markdown, plain text, or pasted notes — and turns them into **clean,
+XLSX, CSV, JSON, HTML, Markdown, plain text, or pasted notes — and turns them into **clean,
 structured data you can query two ways**: precise, spreadsheet-style filters over
 extracted tables & fields, or natural-language / keyword / hybrid search. It runs
 as a single container, is fully self-hosted, needs **no LLM** by default (grounded
