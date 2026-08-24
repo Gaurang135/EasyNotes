@@ -256,12 +256,16 @@ async function openDetail(docId) {
     : `<p class="d-empty">No tables in this document.</p>`;
   const text = d.text_preview
     ? `<div class="d-text">${esc(d.text_preview)}</div>` : `<p class="d-empty">No text preview.</p>`;
+  // Order tells the product's story: the messy source first, then what we pulled out of it.
+  // Empty structured sections are hidden so a plain prose doc doesn't show dead rows.
+  const section = (title, body) => `<div class="d-section"><h4>${title}</h4>${body}</div>`;
+  const out = [section("Original text", text)];
+  if (d.tables.length) out.push(section("Tables", tables));
+  out.push(section("Extracted fields", fields));   // kept even when empty — it's the core payoff
   $("#detail-body").innerHTML = `
     <div class="d-head"><span class="ext">${EXT[d.file_type] || d.file_type}</span><span class="d-title">${esc(d.title)}</span></div>
     <div class="d-sub">${d.file_type} · ${d.status}${d.error ? " · " + esc(d.error) : ""} · ${d.fields.length} fields · ${d.tables.length} tables</div>
-    <div class="d-section"><h4>Extracted fields</h4>${fields}</div>
-    <div class="d-section"><h4>Tables</h4>${tables}</div>
-    <div class="d-section"><h4>Text</h4>${text}</div>`;
+    ${out.join("")}`;
   $("#detail").hidden = false;
   for (const t of d.tables) renderMiniTable(t.id);
 }
