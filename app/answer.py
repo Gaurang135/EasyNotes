@@ -123,20 +123,21 @@ class OpenAICompatSynthesizer:
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
         req = urllib.request.Request(self.url, data=json.dumps(payload).encode(), headers=headers)
-        # Retry transient failures — 429 (free-tier rate limit) and dropped TLS connections —
-        # with a short backoff. 413 is NOT retried here; it bubbles up so answer() can shrink.
-        for attempt in range(3):
+        # Retry transient failures with backoff: 429 (rate limit), 5xx (provider overloaded —
+        # e.g. Gemini 503 under load), and dropped TLS connections. 413 is NOT retried here;
+        # it bubbles up so answer() can shrink the payload. 4xx (auth/bad model) fail fast.
+        for attempt in range(4):
             try:
                 with urllib.request.urlopen(req, timeout=self.timeout) as resp:
                     data = json.loads(resp.read())
                 return data["choices"][0]["message"]["content"].strip()
             except urllib.error.HTTPError as e:
-                if e.code == 429 and attempt < 2:
+                if e.code in (429, 500, 502, 503, 504) and attempt < 3:
                     time.sleep(_retry_after(e, attempt))
                     continue
                 raise
             except (urllib.error.URLError, TimeoutError) as e:
-                if attempt < 2:
+                if attempt < 3:
                     time.sleep(1 + attempt)
                     continue
                 raise urllib.error.URLError(f"answer provider unreachable: {e}")

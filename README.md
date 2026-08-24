@@ -149,7 +149,7 @@ OpenAI-compatible endpoint — no code change:
 # Google Gemini free tier (recommended — generous free tier, good quality)
 export ANSWER_BASE_URL=https://generativelanguage.googleapis.com/v1beta/openai
 export ANSWER_API_KEY=your_ai_studio_key   # aistudio.google.com/apikey
-export ANSWER_MODEL=gemini-3.6-flash       # confirm the current flash id in AI Studio
+export ANSWER_MODEL=gemini-3.6-flash       # reliable free flash (newest 3.7 is capacity-limited on free tier)
 make run
 
 # …or Groq free tier

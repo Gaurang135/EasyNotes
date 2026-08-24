@@ -39,10 +39,12 @@ def answer(body: AnswerReq, state=Depends(get_state)):
     try:
         result = synth.answer(body.q, hits, extra_context=extra)
     except urllib.error.HTTPError as e:
-        if e.code == 429:                        # rate limited — degrade gracefully, not a 502
+        # rate limit (429) or provider overload (5xx) that survived retries — degrade
+        # gracefully to a "busy, try again" card instead of a hard error
+        if e.code in (429, 500, 502, 503, 504):
             return {"question": body.q, "aggregate": aggregate,
-                    "answer": "The answer service is busy right now (rate limit). "
-                              "Please try again in a few seconds — search still works instantly.",
+                    "answer": "The answer model is busy right now. Please try again in a few "
+                              "seconds — search and the Data views still work instantly.",
                     "citations": [], "rate_limited": True}
         raise HTTPException(502, f"answer provider error: {e}")
     except Exception as e:                        # provider/network errors never 500 the app
