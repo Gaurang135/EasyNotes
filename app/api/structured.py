@@ -105,6 +105,24 @@ def insights(state=Depends(get_state)):
     dates = [r[0] for r in c.execute(
         "SELECT value FROM fields WHERE kind='date' AND value GLOB '[0-9][0-9][0-9][0-9]-*' ORDER BY value")]
     amounts = [n for n in (doc_amt.values())]
+
+    # dimensions that make non-financial docs (specs, collections, notes) insightful too
+    activity: dict = defaultdict(int)                 # count of dated items per month
+    for (value,) in c.execute("SELECT value FROM fields WHERE kind='date'"):
+        m = re.search(r"(\d{4})-(\d{2})", value or "")
+        if m:
+            activity[f"{m.group(1)}-{m.group(2)}"] += 1
+    contacts = {
+        "emails": c.execute("SELECT COUNT(DISTINCT value) FROM fields WHERE kind='email'").fetchone()[0],
+        "phones": c.execute("SELECT COUNT(DISTINCT value) FROM fields WHERE kind='phone'").fetchone()[0],
+        "links": c.execute("SELECT COUNT(DISTINCT value) FROM fields WHERE kind='url'").fetchone()[0],
+    }
+    # the structured attributes that recur across documents (by how many docs carry each)
+    top_attributes = [{"key": k, "docs": n} for k, n in c.execute(
+        "SELECT key, COUNT(DISTINCT document_id) FROM fields WHERE kind='pair' "
+        "GROUP BY key ORDER BY 2 DESC, key LIMIT 8")]
+    tbl = c.execute("SELECT COUNT(*), COALESCE(SUM(row_count), 0) FROM tables").fetchone()
+
     return {
         "documents": len(docs),
         "by_type": by_type,
@@ -121,6 +139,10 @@ def insights(state=Depends(get_state)):
         "date_range": {"min": dates[0], "max": dates[-1]} if dates else None,
         "by_vendor": by_vendor,
         "over_time": over_time,
+        "activity": [{"month": m, "count": activity[m]} for m in sorted(activity)],
+        "contacts": contacts,
+        "top_attributes": top_attributes,
+        "tables": {"count": tbl[0], "rows": tbl[1]},
     }
 
 

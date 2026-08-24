@@ -438,10 +438,15 @@ async function loadInsights() {
   const money = (n) => cur + Number(n).toLocaleString(undefined, { maximumFractionDigits: 2 });
   const hasMoney = d.amount && d.amount.docs_with_amount > 0;
 
+  const ct = d.contacts || {};
   const tiles = [["Documents", d.documents]];
   if (hasMoney) { tiles.push(["Total spend", money(d.amount.total)], ["Avg / doc", money(d.amount.avg)]); }
   if (d.distinct_vendors) tiles.push(["Sources", d.distinct_vendors]);
   if (d.date_range) tiles.push(["Date range", `${d.date_range.min} → ${d.date_range.max}`]);
+  if (d.tables && d.tables.count) tiles.push(["Tables", `${d.tables.count} · ${d.tables.rows} rows`]);
+  if (ct.emails) tiles.push(["Emails", ct.emails]);
+  if (ct.links) tiles.push(["Links", ct.links]);
+  if (ct.phones) tiles.push(["Phones", ct.phones]);
 
   let html = `<div class="i-tiles">${tiles.map(([l, v]) =>
     `<div class="i-tile"><div class="i-v">${esc(String(v))}</div><div class="i-l">${l}</div></div>`).join("")}</div>`;
@@ -455,6 +460,15 @@ async function loadInsights() {
     const max = Math.max(...d.over_time.map((v) => v.total)) || 1;
     html += iCard("Spend over time", d.over_time.map((v) =>
       iBar(v.month, v.total / max, money(v.total))).join(""));
+  } else if (d.activity && d.activity.length) {         // non-financial docs still get a timeline
+    const max = Math.max(...d.activity.map((v) => v.count)) || 1;
+    html += iCard("Activity over time (dated items)", d.activity.map((v) =>
+      iBar(v.month, v.count / max, String(v.count))).join(""));
+  }
+  if (d.top_attributes && d.top_attributes.length) {    // recurring structured attributes
+    const max = Math.max(...d.top_attributes.map((a) => a.docs)) || 1;
+    html += iCard("Common attributes (documents)", d.top_attributes.map((a) =>
+      iBar(esc(a.key), a.docs / max, `${a.docs} doc${a.docs > 1 ? "s" : ""}`)).join(""));
   }
   const fk = Object.entries(d.field_kinds || {});
   if (fk.length) {
