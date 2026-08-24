@@ -60,6 +60,31 @@ window.addEventListener("load", positionGlows);
 window.addEventListener("resize", positionGlows);
 setTimeout(positionGlows, 300);
 
+/* ---------- light / dark theme (default: follow the OS) ---------- */
+const SUN = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4.2"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M19.1 4.9l-1.4 1.4M6.3 17.7l-1.4 1.4"/></svg>`;
+const MOON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.2 6.2 0 0 0 10.5 10.5z"/></svg>`;
+const mqLight = window.matchMedia("(prefers-color-scheme: light)");
+function effectiveTheme() {
+  return document.documentElement.getAttribute("data-theme") || (mqLight.matches ? "light" : "dark");
+}
+function renderThemeIcon() {
+  const btn = $("#theme-toggle"); if (!btn) return;
+  const eff = effectiveTheme();
+  btn.innerHTML = eff === "light" ? SUN : MOON;   // shows the theme currently in effect
+  const forced = document.documentElement.getAttribute("data-theme");
+  btn.title = `Theme: ${forced || "system"} — switch to ${eff === "light" ? "dark" : "light"}`;
+}
+function toggleTheme() {
+  const next = effectiveTheme() === "light" ? "dark" : "light";
+  document.documentElement.setAttribute("data-theme", next);
+  try { localStorage.setItem("theme", next); } catch (e) {}
+  renderThemeIcon();
+  positionGlows();                                 // panels change; keep the sliding glows aligned
+}
+$("#theme-toggle").addEventListener("click", toggleTheme);
+mqLight.addEventListener("change", () => { if (!document.documentElement.getAttribute("data-theme")) renderThemeIcon(); });
+renderThemeIcon();
+
 /* ---------- toasts ---------- */
 function toast(msg, kind = "") {
   const el = document.createElement("div");

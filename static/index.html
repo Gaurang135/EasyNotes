@@ -11,6 +11,14 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,900&family=Instrument+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/styles.css">
+  <script>
+    /* apply saved theme before first paint (no flash); no choice = follow the OS */
+    (function () {
+      try { var t = localStorage.getItem("theme");
+        if (t === "light" || t === "dark") document.documentElement.setAttribute("data-theme", t);
+      } catch (e) {}
+    })();
+  </script>
 </head>
 <body>
   <div class="mesh" aria-hidden="true"></div>
@@ -21,13 +29,16 @@
       <span class="spark" aria-hidden="true"></span>
       <div><h1>EasyNotes</h1><p class="tag">Dump any file — query it in plain English or precise filters.</p></div>
     </div>
-    <nav class="tabs" id="tabs">
-      <span class="tab-glow" id="tab-glow" aria-hidden="true"></span>
-      <button class="tab is-active" data-view="search">Search</button>
-      <button class="tab" data-view="library">Library</button>
-      <button class="tab" data-view="data">Data</button>
-      <button class="tab" data-view="add">Add</button>
-    </nav>
+    <div class="head-actions">
+      <nav class="tabs" id="tabs">
+        <span class="tab-glow" id="tab-glow" aria-hidden="true"></span>
+        <button class="tab is-active" data-view="search">Search</button>
+        <button class="tab" data-view="library">Library</button>
+        <button class="tab" data-view="data">Data</button>
+        <button class="tab" data-view="add">Add</button>
+      </nav>
+      <button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle light/dark theme"></button>
+    </div>
   </header>
 
   <main>
