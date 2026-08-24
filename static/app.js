@@ -304,21 +304,46 @@ async function runAsk(q, box) {
     const b = box.querySelector(".retry-ask"); if (b) b.addEventListener("click", () => runAsk(q, box));
     return;
   }
-  const cites = (d.citations || []).map((c) =>
+  // map escaped document titles -> id so inline [Title] citations become clickable
+  const docMap = {};
+  (d.citations || []).forEach((c) => { docMap[esc(c.document_title).trim().toLowerCase()] = c.document_id; });
+  const md = renderMarkdown(d.answer, docMap);
+  // if the answer already cites sources inline (clickable), don't repeat a Sources footer;
+  // only fall back to the footer when nothing was cited inline
+  const footer = md.cited.size ? [] : (d.citations || []);
+  const cites = footer.map((c) =>
     `<span class="cite" data-doc="${c.document_id}">${esc(c.document_title)}</span>`).join("");
   box.innerHTML = `<div class="answer-card">
     <div class="answer-h">✦ Answer</div>
-    <div class="answer-body">${renderMarkdown(d.answer)}</div>
+    <div class="answer-body">${md.html}</div>
     ${cites ? `<div class="answer-cites"><span class="cites-l">Sources</span>${cites}</div>` : ""}</div>`;
   $$("#results .cite").forEach((el) => el.addEventListener("click", () => openDetail(el.dataset.doc)));
 }
 
-/* tiny markdown renderer for grounded answers (bold, bullets, inline citations) */
-function renderMarkdown(raw) {
+/* tiny markdown renderer for grounded answers (bold, bullets, inline citations).
+   Citations that match a real document (docMap: escaped-title -> id) become clickable
+   links to that document; the set of linked ids is returned so the caller can skip a
+   redundant Sources footer. */
+function renderMarkdown(raw, docMap = {}) {
+  const cited = new Set();
+  const keys = Object.keys(docMap).sort((a, b) => b.length - a.length);  // longest title first
+  const lookup = (label) => {
+    const norm = label.trim().toLowerCase();
+    if (docMap[norm] != null) return docMap[norm];
+    // citation may carry a location suffix — "Title (page 1)", "Title, row 3" — match the title prefix
+    for (const k of keys)
+      if (norm.startsWith(k) && (norm.length === k.length || /[\s(,:;]/.test(norm[k.length]))) return docMap[k];
+    return null;
+  };
+  const citeSpan = (label) => {
+    const id = lookup(label);
+    if (id != null) { cited.add(id); return `<span class="cite inline" data-doc="${id}">${label}</span>`; }
+    return `<span class="cite-mark">${label}</span>`;
+  };
   const inline = (s) => s
     .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
-    .replace(/【([^】]+)】/g, '<span class="cite-mark">$1</span>')
-    .replace(/\[([^\]]+)\]/g, '<span class="cite-mark">$1</span>');
+    .replace(/【([^】]+)】/g, (_, m) => citeSpan(m))
+    .replace(/\[([^\]]+)\]/g, (_, m) => citeSpan(m));
   const lines = esc(raw || "").split(/\r?\n/);
   let html = "", inList = false;
   for (const line of lines) {
@@ -332,7 +357,7 @@ function renderMarkdown(raw) {
     }
   }
   if (inList) html += "</ul>";
-  return html;
+  return { html, cited };
 }
 
 /* ---------- document detail (messy doc -> extracted structured data) ---------- */
