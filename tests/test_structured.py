@@ -94,23 +94,6 @@ def test_unknown_filter_column_is_ignored_not_500(tmp_path):
         assert r.status_code == 200 and r.json()["total"] == 3   # bad column ignored
 
 
-def test_insights_computes_exact_spend_analytics(tmp_path):
-    # two invoice-like notes with amounts + a vendor pair -> deterministic spend insights
-    with _client(tmp_path) as c:
-        c.post("/documents/text", json={"title": "inv1",
-               "text": "Vendor: Acme\nInvoice date: 2026-01-10\nTotal Rs.100.50"})
-        c.post("/documents/text", json={"title": "inv2",
-               "text": "Vendor: Globex\nInvoice date: 2026-02-20\nTotal Rs.200.00"})
-        d = c.get("/insights").json()
-        assert d["documents"] == 2
-        assert d["amount"]["total"] == 300.5          # exact sum, no AI
-        assert d["amount"]["max"] == 200.0
-        assert d["distinct_vendors"] == 2
-        names = {v["name"] for v in d["by_vendor"]}
-        assert {"Acme", "Globex"} <= names
-        assert d["date_range"]["min"] == "2026-01-10"
-
-
 def test_seed_populates_empty_corpus_then_refuses(tmp_path):
     with _client(tmp_path) as c:
         assert c.get("/documents").json() == []

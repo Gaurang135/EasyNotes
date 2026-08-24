@@ -1,15 +1,15 @@
 from __future__ import annotations
-import json
 from datetime import datetime, timezone
 from pathlib import Path
 from fastapi import APIRouter, UploadFile, File, Depends, HTTPException, Response, status
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
-from app import db
+from app import db, store
 from app.models import Status
 from app.ingest import validation
 from app.errors import CorruptFileError
 from app.api.deps import get_state
+from app.api.schemas import DocumentOut, DocumentInfo
 
 router = APIRouter()
 
@@ -105,16 +105,9 @@ def paste(body: PasteText, state=Depends(get_state)):
     return {"id": doc_id, "status": "pending"}
 
 
-@router.get("/documents")
+@router.get("/documents", response_model=list[DocumentOut])
 def list_docs(state=Depends(get_state)):
-    rows = state.conn.execute(
-        "SELECT d.id,d.title,d.file_type,d.status,d.error,d.uploaded_at,d.size,"
-        " (SELECT COUNT(*) FROM fields f WHERE f.document_id=d.id),"
-        " (SELECT COUNT(*) FROM tables t WHERE t.document_id=d.id)"
-        " FROM documents d ORDER BY d.id DESC").fetchall()
-    return [{"id": r[0], "title": r[1], "file_type": r[2], "status": r[3],
-             "error": r[4], "uploaded_at": r[5], "size": r[6],
-             "field_count": r[7], "table_count": r[8]} for r in rows]
+    return store.list_documents(state.conn)
 
 
 class BulkDelete(BaseModel):
@@ -127,28 +120,25 @@ def bulk_delete(body: BulkDelete, state=Depends(get_state)):
     actually removed, not just how many ids were requested."""
     deleted = 0
     for doc_id in body.ids:
-        if state.conn.execute("SELECT 1 FROM documents WHERE id=?", (doc_id,)).fetchone():
+        if store.document_exists(state.conn, doc_id):
             db.delete_document(state.conn, doc_id, state.vector_index)
             deleted += 1
     return {"deleted": deleted}
 
 
-@router.get("/documents/{doc_id}")
+@router.get("/documents/{doc_id}", response_model=DocumentInfo)
 def get_doc(doc_id: int, state=Depends(get_state)):
-    r = state.conn.execute(
-        "SELECT id,title,file_type,status,error,warnings FROM documents WHERE id=?", (doc_id,)).fetchone()
-    if not r:
+    doc = store.get_document(state.conn, doc_id)
+    if doc is None:
         raise HTTPException(404, "not found")
-    return {"id": r[0], "title": r[1], "file_type": r[2], "status": r[3],
-            "error": r[4], "warnings": json.loads(r[5] or "[]")}
+    return doc
 
 
 @router.get("/documents/{doc_id}/download")
 def download_doc(doc_id: int, state=Depends(get_state)):
-    r = state.conn.execute("SELECT filename FROM documents WHERE id=?", (doc_id,)).fetchone()
-    if not r:
+    filename = store.original_filename(state.conn, doc_id)
+    if not filename:
         raise HTTPException(404, "not found")
-    filename = r[0]
     path = Path(state.settings.data_dir) / "originals" / f"{doc_id}_{filename}"
     if not path.exists():
         raise HTTPException(404, "original file not available")
