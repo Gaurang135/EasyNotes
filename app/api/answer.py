@@ -1,8 +1,9 @@
 from __future__ import annotations
+import urllib.error
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from app.models import SearchFilter
-from app.search.service import run_search
+from app.search.service import run_search, detect_aggregate_intent, structured_context
 from app.api.deps import get_state
 
 router = APIRouter()
@@ -24,13 +25,26 @@ def answer(body: AnswerReq, state=Depends(get_state)):
                     "set ANSWER_MODEL and ANSWER_API_KEY (e.g. Groq free tier: "
                     "ANSWER_BASE_URL=https://api.groq.com/openai/v1) or point ANSWER_BASE_URL "
                     "at a local Ollama. See README."))
+    # Aggregate questions ("how many", "list all", "distinct") can't be answered from a
+    # top-k retrieval sample — the model would silently miss documents. For these we hand
+    # it the COMPLETE corpus inventory (every doc + every extracted field) so counts and
+    # distinct lists are computed over all the data; excerpts still ride along for detail.
+    aggregate = detect_aggregate_intent(body.q)
+    extra = structured_context(state.conn, body.q) if aggregate else ""
     hits = run_search(state.conn, state.embedder, state.vector_index, state.fts_index,
                       query=body.q, mode=body.mode, flt=SearchFilter(), limit=10, offset=0)
-    if not hits:
+    if not hits and not extra:
         return {"question": body.q, "answer": "I couldn't find anything relevant in your documents.",
                 "citations": []}
     try:
-        result = synth.answer(body.q, hits)
-    except Exception as e:                       # provider/network errors never 500 the app
+        result = synth.answer(body.q, hits, extra_context=extra)
+    except urllib.error.HTTPError as e:
+        if e.code == 429:                        # rate limited — degrade gracefully, not a 502
+            return {"question": body.q, "aggregate": aggregate,
+                    "answer": "The answer service is busy right now (rate limit). "
+                              "Please try again in a few seconds — search still works instantly.",
+                    "citations": [], "rate_limited": True}
         raise HTTPException(502, f"answer provider error: {e}")
-    return {"question": body.q, **result}
+    except Exception as e:                        # provider/network errors never 500 the app
+        raise HTTPException(502, f"answer provider error: {e}")
+    return {"question": body.q, "aggregate": aggregate, **result}

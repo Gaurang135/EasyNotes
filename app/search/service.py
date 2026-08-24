@@ -17,6 +17,68 @@ STOPWORDS = {
 }
 
 
+_AGG_CUES = [
+    "how many", "how much total", "count", "number of", "list all", "list the",
+    "list every", "all the", "every ", "distinct", "unique", "total number",
+    "which companies", "which vendors", "how many invoices", "across all", "sum of",
+    "average", "breakdown", "group by", "each ",
+]
+
+
+def detect_aggregate_intent(query: str) -> bool:
+    """Count/list-all/distinct questions can't be answered from a retrieval sample —
+    they need the whole corpus. Detect them so /answer switches to structured context."""
+    q = " " + query.lower() + " "
+    return any(c in q for c in _AGG_CUES)
+
+
+# Cue words that signal a question is about named entities (extracted as `pair` fields:
+# vendors, clients, owners, …) or wants an exhaustive list of them.
+_PAIR_CUES = ["compan", "vendor", "supplier", "client", "customer", "owner", "buyer",
+              "seller", "who ", "whom", "name", "entit", "organi", "party", "parties",
+              "distinct", "unique", "list all", "list the", "list every"]
+
+
+def _target_kinds(query: str) -> set[str]:
+    """Which extracted-field kinds an aggregate question is asking about, so the inventory
+    can include ALL of those (uncapped) instead of a starved sample of every kind."""
+    kinds = set(detect_field_intents(query))          # amount / date / email / phone / url
+    q = " " + query.lower() + " "
+    if any(c in q for c in _PAIR_CUES):
+        kinds.add("pair")
+    return kinds
+
+
+def structured_context(conn, query: str = "") -> str:
+    """A COMPLETE, per-document inventory of the corpus so the model can compute counts /
+    distinct lists / totals over ALL the data (not a retrieval sample) and cite the exact
+    document each fact came from. It is query-aware: the full document list is always
+    included (for counting/'list all documents'), plus every field of the kind(s) the
+    question targets, grouped by document and left UNCAPPED so nothing needed is dropped.
+    Restricting to the relevant kinds is what keeps the payload small while staying exact."""
+    docs = conn.execute(
+        "SELECT id, title, file_type FROM documents WHERE status='ready' ORDER BY file_type, title"
+    ).fetchall()
+    kinds = _target_kinds(query)
+    by_doc: dict = {}
+    if kinds:
+        qs = ",".join("?" * len(kinds))
+        for did, key, value, kind in conn.execute(
+                f"SELECT document_id, key, value, kind FROM fields WHERE kind IN ({qs})",
+                tuple(kinds)):
+            by_doc.setdefault(did, []).append(
+                f"{key}={value}" if kind == "pair" else f"{kind}={value}")
+    lines = [f"CORPUS INVENTORY — {len(docs)} documents (the whole corpus). "
+             "Format: title [type] :: field=value; …"]
+    for did, title, ft in docs:
+        line = f"- {title} [{ft}]"
+        parts = by_doc.get(did)
+        if parts:
+            line += " :: " + "; ".join(parts)
+        lines.append(line)
+    return "\n".join(lines)
+
+
 def content_terms(query: str) -> list[str]:
     """Query terms worth anchoring on: non-stopword, length>1, longest first."""
     terms = [t for t in re.findall(r"\w+", query.lower()) if t not in STOPWORDS and len(t) > 1]
