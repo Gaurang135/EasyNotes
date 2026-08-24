@@ -337,7 +337,7 @@ textarea.field { resize: vertical; line-height: 1.6; }
 .card .relbar > span { display: block; height: 100%; border-radius: 999px;
   background: linear-gradient(90deg, var(--teal), var(--ember)); }
 .card .rellabel { font: 500 11px "JetBrains Mono", monospace; color: var(--muted); white-space: nowrap; }
-.card .snip { color: #c9cdd8; line-height: 1.65; font-size: 14.5px; }
+.card .snip { color: var(--text); line-height: 1.65; font-size: 14.5px; }
 .card mark { background: linear-gradient(transparent 55%, rgba(242,166,90,.4) 0); color: #fff; padding: 0 1px; border-radius: 2px; }
 .card .card-cta { margin-top: 10px; color: var(--ember); font: 500 12px "JetBrains Mono", monospace; opacity: 0; transform: translateX(-4px); transition: all .25s var(--ease); }
 .card:hover .card-cta { opacity: 1; transform: none; }
@@ -421,7 +421,7 @@ textarea.field { resize: vertical; line-height: 1.6; }
 .fcard .fk { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .08em; display: flex; justify-content: space-between; }
 .fcard .fk .kind { color: var(--faint); font-family: "JetBrains Mono", monospace; }
 .fcard .fv { color: var(--text); font-weight: 500; margin-top: 3px; word-break: break-word; }
-.d-text { color: #c9cdd8; line-height: 1.6; font-size: 13.5px; white-space: pre-wrap; max-height: 220px; overflow-y: auto;
+.d-text { color: var(--text); line-height: 1.6; font-size: 13.5px; white-space: pre-wrap; max-height: 220px; overflow-y: auto;
   border: 1px solid var(--line); border-radius: 12px; padding: 14px; background: var(--panel); }
 
 /* --- landing overview cards (messy doc -> structured data) --- */
