@@ -68,4 +68,4 @@ class PptxParser:
                                             location=f"slide {i} notes", heading=title))
         if not blocks:
             raise NoExtractableTextError("no extractable text")
-        return ParsedDoc(text_blocks=blocks, metadata={}, warnings=[])
+        return ParsedDoc(text_blocks=blocks, metadata={}, warnings=[], tables=tables)
