@@ -2,7 +2,7 @@ from __future__ import annotations
 import json
 from datetime import datetime, timezone
 from pathlib import Path
-from fastapi import APIRouter, UploadFile, File, Depends, HTTPException
+from fastapi import APIRouter, UploadFile, File, Depends, HTTPException, Response, status
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from app import db
@@ -60,8 +60,11 @@ def _ingest_bytes(state, filename: str, data: bytes) -> dict:
 
 
 @router.post("/documents", status_code=201)
-def upload(file: UploadFile = File(...), state=Depends(get_state)):
-    return _ingest_bytes(state, file.filename or "untitled", file.file.read())
+def upload(response: Response, file: UploadFile = File(...), state=Depends(get_state)):
+    result = _ingest_bytes(state, file.filename or "untitled", file.file.read())
+    if result.get("status") == "duplicate":     # nothing was created → 200, not 201
+        response.status_code = status.HTTP_200_OK
+    return result
 
 
 _SAMPLES_DIR = Path(__file__).resolve().parent.parent.parent / "samples"
@@ -120,10 +123,14 @@ class BulkDelete(BaseModel):
 
 @router.post("/documents/bulk-delete")
 def bulk_delete(body: BulkDelete, state=Depends(get_state)):
-    """Delete several documents in one call (Library multi-select)."""
+    """Delete several documents in one call (Library multi-select). Reports the number
+    actually removed, not just how many ids were requested."""
+    deleted = 0
     for doc_id in body.ids:
-        db.delete_document(state.conn, doc_id)
-    return {"deleted": len(body.ids)}
+        if state.conn.execute("SELECT 1 FROM documents WHERE id=?", (doc_id,)).fetchone():
+            db.delete_document(state.conn, doc_id, state.vector_index)
+            deleted += 1
+    return {"deleted": deleted}
 
 
 @router.get("/documents/{doc_id}")
@@ -150,5 +157,5 @@ def download_doc(doc_id: int, state=Depends(get_state)):
 
 @router.delete("/documents/{doc_id}", status_code=204)
 def delete_doc(doc_id: int, state=Depends(get_state)):
-    db.delete_document(state.conn, doc_id)
+    db.delete_document(state.conn, doc_id, state.vector_index)
     return None

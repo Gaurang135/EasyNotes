@@ -29,7 +29,6 @@ def create_app(settings: Settings | None = None, *, embedder=None, answer_synth=
         restore_on_boot(backend, db_path)          # ephemeral-tier durability
         conn = db.ThreadLocalConn(db_path)          # per-thread connections (worker + requests)
         db.init_schema(conn)
-        db.mark_interrupted(conn)
         conn.execute("INSERT OR REPLACE INTO meta(key,value) VALUES('data_dir',?)",
                      (str(data_dir),))
         conn.commit()
@@ -38,6 +37,7 @@ def create_app(settings: Settings | None = None, *, embedder=None, answer_synth=
         app.state.parsers = PARSERS
         app.state.embedder = embedder or FastembedEmbedder(settings)
         app.state.vector_index = make_vector_index(conn)
+        db.recover_interrupted(conn, app.state.vector_index)   # purge partial data from crashed ingests
         app.state.fts_index = Fts5Index(conn)
         app.state.backend = backend
         pipeline_backend = None if settings.snapshot_backend == "none" else backend

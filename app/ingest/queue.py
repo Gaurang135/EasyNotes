@@ -52,7 +52,11 @@ class ThreadedIngestQueue:
         self._q.put(document_id)
 
     def stop(self) -> None:
+        # let any in-flight ingest finish before shutdown continues, so the final
+        # snapshot runs against a quiescent DB (no torn write / "database is locked")
         self._stop.set()
+        if self._thread is not None:
+            self._thread.join(timeout=10)
 
 
 def make_ingest_queue(mode: str, pipeline):

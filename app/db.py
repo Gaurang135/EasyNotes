@@ -155,21 +155,27 @@ def init_schema(conn: sqlite3.Connection) -> None:
     conn.commit()
 
 
-def delete_document(conn: sqlite3.Connection, document_id: int) -> None:
+def _delete_children(conn: sqlite3.Connection, document_id: int) -> None:
+    """Delete everything derived from a document EXCEPT the documents row itself:
+    chunks (FTS cleaned by triggers), table_rows, tables, fields."""
+    conn.execute("DELETE FROM chunks WHERE document_id=?", (document_id,))
+    tids = [r[0] for r in conn.execute(
+        "SELECT id FROM tables WHERE document_id=?", (document_id,))]
+    for tid in tids:
+        conn.execute("DELETE FROM table_rows WHERE table_id=?", (tid,))
+    conn.execute("DELETE FROM tables WHERE document_id=?", (document_id,))
+    conn.execute("DELETE FROM fields WHERE document_id=?", (document_id,))
+
+
+def delete_document(conn: sqlite3.Connection, document_id: int, vector_index=None) -> None:
+    # Vector rows are cleaned through the active VectorIndex (numpy OR sqlite-vec), so the
+    # cleanup lives in exactly one backend-agnostic place — never a table-specific DELETE
+    # here that silently misses the other backend.
+    if vector_index is not None:
+        vector_index.delete_document(document_id)
     try:
         conn.execute("BEGIN")
-        ids = [r[0] for r in conn.execute(
-            "SELECT id FROM chunks WHERE document_id=?", (document_id,))]
-        if ids and getattr(conn, "vec_available", False):
-            qs = ",".join("?" * len(ids))
-            conn.execute(f"DELETE FROM chunk_vectors WHERE chunk_id IN ({qs})", ids)
-        conn.execute("DELETE FROM chunks WHERE document_id=?", (document_id,))  # triggers clean FTS
-        tids = [r[0] for r in conn.execute(
-            "SELECT id FROM tables WHERE document_id=?", (document_id,))]
-        for tid in tids:
-            conn.execute("DELETE FROM table_rows WHERE table_id=?", (tid,))
-        conn.execute("DELETE FROM tables WHERE document_id=?", (document_id,))
-        conn.execute("DELETE FROM fields WHERE document_id=?", (document_id,))
+        _delete_children(conn, document_id)
         conn.execute("DELETE FROM documents WHERE id=?", (document_id,))
         conn.commit()
     except Exception:
@@ -187,7 +193,20 @@ def set_status(conn, document_id, status, error=None, warnings=None) -> None:
     conn.commit()
 
 
-def mark_interrupted(conn) -> None:
-    conn.execute(
-        "UPDATE documents SET status='failed', error='interrupted' WHERE status='processing'")
-    conn.commit()
+def recover_interrupted(conn, vector_index=None) -> None:
+    """A crash can leave a document 'processing' with partially-written chunks/vectors/
+    tables/fields (they're committed in stages). On boot, purge that partial data so it
+    can't pollute keyword/semantic search, and mark the document failed('interrupted')."""
+    ids = [r[0] for r in conn.execute(
+        "SELECT id FROM documents WHERE status='processing'")]
+    for did in ids:
+        if vector_index is not None:
+            vector_index.delete_document(did)
+        try:
+            conn.execute("BEGIN")
+            _delete_children(conn, did)
+            conn.execute("UPDATE documents SET status='failed', error='interrupted' WHERE id=?", (did,))
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise

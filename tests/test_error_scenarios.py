@@ -53,9 +53,11 @@ def test_empty_file_fails_with_reason(tmp_path):
 def test_duplicate_upload_is_deduped(tmp_path):
     with _client(tmp_path) as c:
         body = b"the same content twice"
-        first = c.post("/documents", files={"file": ("a.txt", body, "text/plain")}).json()
-        again = c.post("/documents", files={"file": ("a.txt", body, "text/plain")}).json()
-        assert again["status"] == "duplicate" and again["id"] == first["id"]
+        r1 = c.post("/documents", files={"file": ("a.txt", body, "text/plain")})
+        r2 = c.post("/documents", files={"file": ("a.txt", body, "text/plain")})
+        assert r1.status_code == 201                       # created
+        assert r2.status_code == 200                       # nothing created → not 201
+        assert r2.json()["status"] == "duplicate" and r2.json()["id"] == r1.json()["id"]
 
 
 def test_bad_fts_query_does_not_500(tmp_path):
