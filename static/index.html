@@ -81,11 +81,16 @@
     <section id="view-data" class="view">
       <div class="segmented" id="data-modes">
         <span class="seg-glow" id="dseg-glow" aria-hidden="true"></span>
-        <button class="seg is-active" data-dmode="tables">Tables</button>
+        <button class="seg is-active" data-dmode="insights">Insights</button>
+        <button class="seg" data-dmode="tables">Tables</button>
         <button class="seg" data-dmode="fields">Fields</button>
       </div>
 
-      <div id="pane-tables" class="pane is-active">
+      <div id="pane-insights" class="pane is-active">
+        <div id="insights-body"><p class="empty">Add documents to see insights.</p></div>
+      </div>
+
+      <div id="pane-tables" class="pane">
         <div class="tablebar">
           <input id="table-filter" class="field" placeholder="Filter rows across all tables…">
         </div>

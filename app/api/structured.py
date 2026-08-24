@@ -1,9 +1,39 @@
 from __future__ import annotations
 import json
+import re
+from collections import defaultdict
 from fastapi import APIRouter, Depends, HTTPException, Query
 from app.api.deps import get_state
 
 router = APIRouter()
+
+# a pair whose key names the paying/selling entity, used to attribute spend to a source
+_VENDOR_KEY = re.compile(
+    r"vendor|restaurant|merchant|company|supplier|seller|legal entity|store|shop|biller|from",
+    re.I)
+_CURRENCY = [("₹", "₹"), ("inr", "₹"), ("rs", "₹"), ("$", "$"), ("usd", "$"),
+             ("€", "€"), ("eur", "€"), ("£", "£"), ("gbp", "£")]
+
+
+def _parse_amount(value: str):
+    """Best-effort numeric value from a messy amount string ('INR 470.42', 'Rs.2,742.00').
+    Matches the number itself so a currency prefix like 'Rs.' can't leak a stray dot."""
+    m = re.search(r"\d[\d,]*(?:\.\d+)?", value or "")
+    if not m:
+        return None
+    try:
+        return float(m.group(0).replace(",", ""))
+    except ValueError:
+        return None
+
+
+def _currency(values: list[str]) -> str:
+    for v in values:
+        low = v.lower()
+        for token, sym in _CURRENCY:
+            if token in low:
+                return sym
+    return ""
 
 
 @router.get("/stats")
@@ -20,6 +50,77 @@ def stats(state=Depends(get_state)):
         "by_type": by_type,
         # lets the UI default the landing to Ask only when a generation model is configured
         "ask_enabled": getattr(state, "answer_synth", None) is not None,
+    }
+
+
+@router.get("/insights")
+def insights(state=Depends(get_state)):
+    """Exact, AI-free analytics computed from the extracted structured data — so the numbers
+    are accurate and free (an LLM would miscount). Adapts to whatever was extracted: spend
+    totals + by-source + over-time when amounts exist, plus field/type breakdowns."""
+    c = state.conn
+    docs = c.execute("SELECT id, title, file_type FROM documents WHERE status='ready'").fetchall()
+    title = {d[0]: d[1] for d in docs}
+    by_type: dict = {}
+    for _, _, ft in docs:
+        by_type[ft] = by_type.get(ft, 0) + 1
+    field_kinds = {r[0]: r[1] for r in c.execute(
+        "SELECT kind, COUNT(*) FROM fields GROUP BY kind ORDER BY 2 DESC")}
+
+    amount_vals = c.execute("SELECT document_id, value FROM fields WHERE kind='amount'").fetchall()
+    # a document's spend = its largest amount (line items ≤ the total), so multi-amount
+    # invoices don't double-count and single-amount receipts stay exact
+    doc_amt: dict = {}
+    for did, val in amount_vals:
+        n = _parse_amount(val)
+        if n is not None:
+            doc_amt[did] = max(doc_amt.get(did, 0.0), n)
+
+    doc_vendor: dict = {}
+    for did, key, value in c.execute("SELECT document_id, key, value FROM fields WHERE kind='pair'"):
+        if did not in doc_vendor and _VENDOR_KEY.search(key or ""):
+            doc_vendor[did] = value.strip()
+
+    by_vendor_map: dict = defaultdict(lambda: [0.0, 0])   # name -> [total, count]
+    for did, amt in doc_amt.items():
+        name = doc_vendor.get(did) or title.get(did, "Unknown")
+        by_vendor_map[name][0] += amt
+        by_vendor_map[name][1] += 1
+    by_vendor = sorted(
+        ({"name": n, "total": round(t, 2), "count": ct} for n, (t, ct) in by_vendor_map.items()),
+        key=lambda x: -x["total"])[:8]
+
+    # spend per month, from each document's earliest ISO date
+    doc_month: dict = {}
+    for did, value in c.execute("SELECT document_id, value FROM fields WHERE kind='date' ORDER BY value"):
+        m = re.search(r"(\d{4})-(\d{2})", value or "")
+        if m and did not in doc_month:
+            doc_month[did] = f"{m.group(1)}-{m.group(2)}"
+    month_map: dict = defaultdict(float)
+    for did, amt in doc_amt.items():
+        if did in doc_month:
+            month_map[doc_month[did]] += amt
+    over_time = [{"month": m, "total": round(month_map[m], 2)} for m in sorted(month_map)]
+
+    dates = [r[0] for r in c.execute(
+        "SELECT value FROM fields WHERE kind='date' AND value GLOB '[0-9][0-9][0-9][0-9]-*' ORDER BY value")]
+    amounts = [n for n in (doc_amt.values())]
+    return {
+        "documents": len(docs),
+        "by_type": by_type,
+        "field_kinds": field_kinds,
+        "currency": _currency([v for _, v in amount_vals]),
+        "amount": {
+            "docs_with_amount": len(doc_amt),
+            "total": round(sum(amounts), 2) if amounts else 0,
+            "avg": round(sum(amounts) / len(amounts), 2) if amounts else 0,
+            "min": round(min(amounts), 2) if amounts else 0,
+            "max": round(max(amounts), 2) if amounts else 0,
+        },
+        "distinct_vendors": len({v for v in doc_vendor.values()}),
+        "date_range": {"min": dates[0], "max": dates[-1]} if dates else None,
+        "by_vendor": by_vendor,
+        "over_time": over_time,
     }
 
 

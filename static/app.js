@@ -20,7 +20,7 @@ function activateTab(btn) {
   const v = btn.dataset.view;
   if (v === "search") { loadStats(); loadOverview(); }
   if (v === "library") loadLibrary();
-  if (v === "data") { loadAllTables(); loadFields(); }
+  if (v === "data") { loadInsights(); loadAllTables(); loadFields(); }
 }
 $$(".tab").forEach((t) => t.addEventListener("click", () => activateTab(t)));
 
@@ -421,6 +421,52 @@ async function loadOverview() {
       </article>`;
     }).join("");
   $$("#results .ocard").forEach((el) => el.addEventListener("click", () => openDetail(el.dataset.doc)));
+}
+
+/* ---------- data: insights (exact, AI-free analytics from extracted fields) ---------- */
+const iCard = (title, body) => `<div class="i-card"><h4>${title}</h4>${body}</div>`;
+const iBar = (label, frac, val) =>
+  `<div class="i-bar"><span class="i-bl" title="${label}">${label}</span>` +
+  `<span class="i-track"><span class="i-fill" style="width:${Math.max(3, Math.round(frac * 100))}%"></span></span>` +
+  `<span class="i-bv">${val}</span></div>`;
+
+async function loadInsights() {
+  let d; try { d = await (await fetch("/insights")).json(); } catch { return; }
+  const box = $("#insights-body");
+  if (!d.documents) { box.innerHTML = `<p class="empty">Add documents to see insights.</p>`; return; }
+  const cur = d.currency || "";
+  const money = (n) => cur + Number(n).toLocaleString(undefined, { maximumFractionDigits: 2 });
+  const hasMoney = d.amount && d.amount.docs_with_amount > 0;
+
+  const tiles = [["Documents", d.documents]];
+  if (hasMoney) { tiles.push(["Total spend", money(d.amount.total)], ["Avg / doc", money(d.amount.avg)]); }
+  if (d.distinct_vendors) tiles.push(["Sources", d.distinct_vendors]);
+  if (d.date_range) tiles.push(["Date range", `${d.date_range.min} → ${d.date_range.max}`]);
+
+  let html = `<div class="i-tiles">${tiles.map(([l, v]) =>
+    `<div class="i-tile"><div class="i-v">${esc(String(v))}</div><div class="i-l">${l}</div></div>`).join("")}</div>`;
+
+  if (d.by_vendor && d.by_vendor.length) {
+    const max = Math.max(...d.by_vendor.map((v) => v.total)) || 1;
+    html += iCard("Spend by source", d.by_vendor.map((v) =>
+      iBar(esc(v.name), v.total / max, money(v.total) + (v.count > 1 ? ` · ${v.count}` : ""))).join(""));
+  }
+  if (hasMoney && d.over_time && d.over_time.length) {
+    const max = Math.max(...d.over_time.map((v) => v.total)) || 1;
+    html += iCard("Spend over time", d.over_time.map((v) =>
+      iBar(v.month, v.total / max, money(v.total))).join(""));
+  }
+  const fk = Object.entries(d.field_kinds || {});
+  if (fk.length) {
+    const max = Math.max(...fk.map(([, n]) => n)) || 1;
+    html += iCard("Extracted field types", fk.map(([k, n]) => iBar(k, n / max, String(n))).join(""));
+  }
+  const bt = Object.entries(d.by_type || {});
+  if (bt.length) {
+    html += iCard("Documents by type", bt.map(([t, n]) =>
+      `<span class="i-chip"><b>${n}</b> ${esc(t.toUpperCase())}</span>`).join(""));
+  }
+  box.innerHTML = html;
 }
 
 /* ---------- data: all tables together (cross-document) ---------- */
