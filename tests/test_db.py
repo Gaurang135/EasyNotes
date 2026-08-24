@@ -60,6 +60,15 @@ def test_delete_document_clears_vectors_via_index(tmp_path):
     assert conn.execute("SELECT count(*) FROM chunks").fetchone()[0] == 0
 
 
+def test_assert_embed_dim_detects_model_change(tmp_path):
+    import pytest
+    conn = _mk(tmp_path)
+    db.assert_embed_dim(conn, 384)          # first boot stamps the dimension
+    db.assert_embed_dim(conn, 384)          # same model/dim → OK
+    with pytest.raises(RuntimeError):
+        db.assert_embed_dim(conn, 768)      # different-dim model → fail loudly, not corrupt KNN
+
+
 def test_recover_interrupted_purges_partial_data(tmp_path):
     # a crash left the doc 'processing' with committed chunks — recovery must remove that
     # partial data (so it can't pollute search), not just relabel the status

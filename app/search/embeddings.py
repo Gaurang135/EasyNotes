@@ -32,8 +32,6 @@ class FakeEmbedder:
 
 
 class FastembedEmbedder:
-    dim = 384
-
     def __init__(self, settings):
         from fastembed import TextEmbedding
         # Offline in the image via HF_HUB_OFFLINE=1 + a pre-populated cache_dir.
@@ -44,6 +42,9 @@ class FastembedEmbedder:
         # never pass parallel= : it forks whole model copies (OOM on 512MB)
         self._model = TextEmbedding(**kwargs)
         self._batch = settings.embed_batch_size
+        # derive the dimension from the actually-loaded model, so swapping embed_model
+        # needs no code change and the vector schema is always sized correctly
+        self.dim = len(self.embed_passages(["dimension probe"])[0])
 
     def embed_passages(self, texts: Sequence[str]) -> list[list[float]]:
         return [v.tolist() for v in self._model.embed(list(texts), batch_size=self._batch)]

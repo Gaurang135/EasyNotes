@@ -28,14 +28,16 @@ def create_app(settings: Settings | None = None, *, embedder=None, answer_synth=
     async def lifespan(app: FastAPI):
         restore_on_boot(backend, db_path)          # ephemeral-tier durability
         conn = db.ThreadLocalConn(db_path)          # per-thread connections (worker + requests)
-        db.init_schema(conn)
+        app.state.embedder = embedder or FastembedEmbedder(settings)
+        # the vector schema is sized from the embedder, so swapping the model is zero-code
+        db.init_schema(conn, app.state.embedder.dim)
+        db.assert_embed_dim(conn, app.state.embedder.dim)   # fail loudly on a model/dim change
         conn.execute("INSERT OR REPLACE INTO meta(key,value) VALUES('data_dir',?)",
                      (str(data_dir),))
         conn.commit()
         app.state.settings = settings
         app.state.conn = conn
         app.state.parsers = PARSERS
-        app.state.embedder = embedder or FastembedEmbedder(settings)
         app.state.vector_index = make_vector_index(conn)
         db.recover_interrupted(conn, app.state.vector_index)   # purge partial data from crashed ingests
         app.state.fts_index = Fts5Index(conn)

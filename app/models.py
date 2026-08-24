@@ -79,8 +79,6 @@ class SearchHit:
 class SearchFilter:
     file_type: str | None = None
     doc_id: int | None = None
-    date_from: str | None = None
-    date_to: str | None = None
 
 
 @dataclass(frozen=True)

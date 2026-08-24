@@ -4,7 +4,6 @@ import sqlite3
 import threading
 
 log = logging.getLogger("easynotes.db")
-EMBED_DIM = 384
 
 SCHEMA = f"""
 CREATE TABLE IF NOT EXISTS documents (
@@ -145,13 +144,25 @@ def sqlite_vec_available(path: str) -> bool:
     return ok
 
 
-def init_schema(conn: sqlite3.Connection) -> None:
+def init_schema(conn: sqlite3.Connection, embed_dim: int = 384) -> None:
     conn.executescript(SCHEMA)
     if getattr(conn, "vec_available", False):
         conn.execute(
-            f"CREATE VIRTUAL TABLE IF NOT EXISTS chunk_vectors USING vec0("
-            f"chunk_id INTEGER PRIMARY KEY, embedding float[{EMBED_DIM}] distance_metric=cosine)"
+            "CREATE VIRTUAL TABLE IF NOT EXISTS chunk_vectors USING vec0("
+            f"chunk_id INTEGER PRIMARY KEY, embedding float[{embed_dim}] distance_metric=cosine)"
         )
+    conn.commit()
+
+
+def assert_embed_dim(conn: sqlite3.Connection, embed_dim: int) -> None:
+    """Stamp the embedding dimension and fail loudly if it changed since the DB was built —
+    a different-dimension model would otherwise silently corrupt KNN against the old vectors."""
+    row = conn.execute("SELECT value FROM meta WHERE key='embed_dim'").fetchone()
+    if row and int(row[0]) != embed_dim:
+        raise RuntimeError(
+            f"embedding dimension changed ({row[0]} → {embed_dim}); the stored vectors are "
+            f"incompatible. Delete the data dir to re-embed with the new model.")
+    conn.execute("INSERT OR REPLACE INTO meta(key,value) VALUES('embed_dim',?)", (str(embed_dim),))
     conn.commit()
 
 

@@ -79,8 +79,3 @@ class Fts5Index:
             rows = self.conn.execute(sql, params).fetchall()
         # bm25 'rank' is negative-is-better; flip to higher-is-better
         return [ScoredChunk(chunk_id=cid, score=-rank) for cid, rank in rows]
-
-    def delete_document(self, document_id: int) -> None:
-        # chunks_fts is external-content: deleting chunks rows fires the AFTER DELETE trigger
-        self.conn.execute("DELETE FROM chunks WHERE document_id=?", (document_id,))
-        self.conn.commit()
