@@ -19,6 +19,9 @@ class Settings:
     snapshot_secret_key: str | None = None
     snapshot_interval_s: int = 300
     ingest_mode: str = "threaded"            # threaded (worker) | inline (synchronous, tests)
+    answer_base_url: str | None = None       # OpenAI-compatible endpoint for the optional RAG layer
+    answer_api_key: str | None = None
+    answer_model: str | None = None          # set model + (key or base_url) to enable /answer
 
     @staticmethod
     def from_env(overrides: dict | None = None) -> "Settings":
@@ -41,4 +44,7 @@ class Settings:
             snapshot_secret_key=g("SNAPSHOT_SECRET_KEY") or None,
             snapshot_interval_s=int(g("SNAPSHOT_INTERVAL_S", "300")),
             ingest_mode=g("INGEST_MODE", "threaded"),
+            answer_base_url=g("ANSWER_BASE_URL") or None,
+            answer_api_key=g("ANSWER_API_KEY") or None,
+            answer_model=g("ANSWER_MODEL") or None,
         )

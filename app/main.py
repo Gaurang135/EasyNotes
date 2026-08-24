@@ -17,7 +17,7 @@ from app.persistence.snapshot import restore_on_boot, snapshot_db
 from app.api import documents, search, answer, structured
 
 
-def create_app(settings: Settings | None = None, *, embedder=None) -> FastAPI:
+def create_app(settings: Settings | None = None, *, embedder=None, answer_synth=None) -> FastAPI:
     settings = settings or Settings.from_env()
     data_dir = Path(settings.data_dir)
     data_dir.mkdir(parents=True, exist_ok=True)
@@ -45,6 +45,8 @@ def create_app(settings: Settings | None = None, *, embedder=None) -> FastAPI:
             conn, PARSERS, make_token_counter(settings),
             app.state.embedder, app.state.vector_index,
             backend=pipeline_backend, db_path=db_path)
+        from app.answer import make_synthesizer
+        app.state.answer_synth = answer_synth if answer_synth is not None else make_synthesizer(settings)
         app.state.ingest = make_ingest_queue(settings.ingest_mode, app.state.pipeline)
         app.state.ingest.start()
         # recover any documents left 'pending' by a crash/restart (never dropped)

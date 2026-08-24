@@ -30,6 +30,7 @@
     <!-- SEARCH (dashboard landing) -->
     <section id="view-search" class="view is-active">
       <div class="stats" id="stats"></div>
+      <div id="type-breakdown" class="type-breakdown"></div>
       <form id="search-form" class="searchbar">
         <div class="search-input">
           <span class="search-icon" aria-hidden="true">⌕</span>
@@ -37,11 +38,12 @@
         </div>
         <div class="modepick" id="modepick">
           <span class="mode-glow" id="mode-glow" aria-hidden="true"></span>
+          <button type="button" class="mode" data-m="ask">✦ Ask</button>
           <button type="button" class="mode is-active" data-m="hybrid">Hybrid</button>
           <button type="button" class="mode" data-m="semantic">Meaning</button>
           <button type="button" class="mode" data-m="keyword">Keyword</button>
         </div>
-        <button class="btn btn-primary">Search</button>
+        <button class="btn btn-primary" id="search-btn">Search</button>
       </form>
       <div id="results" class="results"><p class="empty">Search across everything you've added — or open <b>Data</b> for precise, spreadsheet-style filtering.</p></div>
     </section>

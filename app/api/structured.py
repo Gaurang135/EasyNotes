@@ -51,10 +51,13 @@ def document_detail(doc_id: int, state=Depends(get_state)):
     tables = [{"id": r[0], "name": r[1], "columns": json.loads(r[2]), "row_count": r[3]}
               for r in c.execute(
         "SELECT id,name,columns,row_count FROM tables WHERE document_id=? ORDER BY id", (doc_id,))]
-    preview = [r[0] for r in c.execute(
-        "SELECT text FROM chunks WHERE document_id=? ORDER BY seq LIMIT 3", (doc_id,))]
+    chunks = [r[0] for r in c.execute(
+        "SELECT text FROM chunks WHERE document_id=? ORDER BY seq", (doc_id,))]
+    full = "\n\n".join(chunks)
+    CAP = 12000
+    text = full[:CAP] + ("\n\n… (truncated — full text is indexed)" if len(full) > CAP else "")
     return {"id": d[0], "title": d[1], "file_type": d[2], "status": d[3], "error": d[4],
-            "fields": fields, "tables": tables, "text_preview": "\n\n".join(preview)}
+            "fields": fields, "tables": tables, "text_preview": text, "chunk_count": len(chunks)}
 
 
 @router.get("/tables")

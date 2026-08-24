@@ -44,6 +44,7 @@ let searchMode = "hybrid";
 $$(".mode").forEach((m) => m.addEventListener("click", () => {
   $$(".mode").forEach((x) => x.classList.toggle("is-active", x === m));
   searchMode = m.dataset.m; slide(modeGlow, m);
+  const btn = $("#search-btn"); if (btn) btn.textContent = searchMode === "ask" ? "Ask" : "Search";
 }));
 
 function positionGlows() {
@@ -70,6 +71,11 @@ async function loadStats() {
   const tiles = [["Documents", s.documents], ["Tables", s.tables], ["Fields", s.fields], ["Chunks", s.chunks]];
   $("#stats").innerHTML = tiles.map(([l, n], i) =>
     `<div class="stat" style="animation-delay:${i * 60}ms"><div class="n">${n}</div><div class="l">${l}</div></div>`).join("");
+  const bt = s.by_type || {};
+  const order = ["pdf", "pptx", "docx", "xlsx", "csv", "md", "txt"];
+  const tb = $("#type-breakdown");
+  if (tb) tb.innerHTML = order.filter((t) => bt[t]).map((t) =>
+    `<span class="tb"><b>${bt[t]}</b> ${t.toUpperCase()}</span>`).join("");
 }
 
 /* ---------- upload / paste ---------- */
@@ -133,7 +139,9 @@ async function loadRecent() {
 $("#search-form").addEventListener("submit", async (ev) => {
   ev.preventDefault();
   const q = $("#q").value.trim(); if (!q) return;
-  const box = $("#results"); box.innerHTML = `<p class="empty">Searching…</p>`;
+  const box = $("#results");
+  if (searchMode === "ask") return runAsk(q, box);
+  box.innerHTML = `<p class="empty">Searching…</p>`;
   const data = await (await fetch(`/search?q=${encodeURIComponent(q)}&mode=${searchMode}`)).json();
   const answersHtml = (data.answers && data.answers.length) ? `
     <div class="answers">
@@ -163,6 +171,36 @@ $("#search-form").addEventListener("submit", async (ev) => {
 });
 function wireAnswerClicks() {
   $$("#results .ans").forEach((el) => el.addEventListener("click", () => openDetail(el.dataset.doc)));
+}
+
+/* ---------- Ask (grounded RAG answer) ---------- */
+async function runAsk(q, box) {
+  box.innerHTML = `<div class="answer-card"><div class="answer-h">✦ Thinking…</div></div>`;
+  let r, d;
+  try {
+    r = await fetch("/answer", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ q }) });
+    d = await r.json();
+  } catch (e) { box.innerHTML = `<p class="empty">Ask failed: ${esc(String(e))}</p>`; return; }
+  if (r.status === 501) {
+    box.innerHTML = `<div class="answer-card off">
+      <div class="answer-h">✦ Ask is off (LLM-free by default)</div>
+      <div class="answer-body">EasyNotes answers are grounded in your documents but need a
+      generation model, which is optional. Enable by setting <code>ANSWER_MODEL</code> +
+      <code>ANSWER_API_KEY</code> (e.g. a free Groq key with
+      <code>ANSWER_BASE_URL=https://api.groq.com/openai/v1</code>) or a local Ollama — see README.
+      Meanwhile, Hybrid / Meaning / Keyword search work now.</div></div>`;
+    return;
+  }
+  if (!r.ok) { box.innerHTML = `<p class="empty">${esc(d.detail || "answer error")}</p>`; return; }
+  const cites = (d.citations || []).map((c) =>
+    `<span class="cite" data-doc="${c.document_id}">${esc(c.document_title)}</span>`).join("");
+  const answer = esc(d.answer).replace(/\[([^\]]+)\]/g, "<b>[$1]</b>");
+  box.innerHTML = `<div class="answer-card">
+    <div class="answer-h">✦ Answer</div>
+    <div class="answer-body">${answer}</div>
+    ${cites ? `<div class="answer-cites"><span class="cites-l">Sources</span>${cites}</div>` : ""}</div>`;
+  $$("#results .cite").forEach((el) => el.addEventListener("click", () => openDetail(el.dataset.doc)));
 }
 
 /* ---------- document detail (messy doc -> extracted structured data) ---------- */
