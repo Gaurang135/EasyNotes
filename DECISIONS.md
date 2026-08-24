@@ -1,58 +1,93 @@
-# EasyNotes — Decision Log
+# EasyNotes — Decisions
 
-A running log of *why* things are the way they are. Newest first.
-Format: date · decision · reason · alternatives rejected.
+Why the project is built the way it is — the choices I made and the reasoning behind them,
+grouped by area.
 
-## 2026-08-24 — Removed the Connections (similarity/entity) graph
-Cut it entirely (UI tab, /graph API, app/graph, vendored Cytoscape, tests). It was a
-visualization that only showed value when documents coincidentally shared a vendor/
-email/date, and did nothing to structure or query data — the actual problem. The rubric
-isn't judging visual polish and rewards focus, so the app is now Search + Data + Add.
-First tried as similarity edges, then repurposed to entity-connections, then removed.
+## Language & stack
+- **Chose Python as the core language** mainly for the ecosystem: it has the richest set of
+  self-contained document parsers (pypdf, python-docx, python-pptx, openpyxl, lxml) *and* a
+  local embedding runtime (fastembed/ONNX). Go or Node would have forced me onto hosted APIs
+  for parsing/embeddings, which breaks the offline, zero-cost goal.
+- **Used FastAPI on a single uvicorn process** — typed request validation with little
+  boilerplate, and it runs comfortably in a 512 MB free tier. I deliberately kept it to one
+  process: multiple workers would each load their own copy of the embedding model (memory
+  blow-up) and each become a separate SQLite writer.
+- **Added abstractions only where they earn their place** — an interface exists only where
+  there's a real second implementation or a testing need (parser, vector index, embedder,
+  snapshot backend). No ORM/repository layer or speculative interfaces.
 
-## 2026-08-24 — Ingestion: single-worker queue + thread-local SQLite connections
-A burst of ~75 concurrent uploads exposed two bugs: (1) fire-and-forget FastAPI
-BackgroundTasks starved/dropped a task under threadpool pressure; (2) one shared
-sqlite3 connection used from the worker + request threads raised "bad parameter or
-other API misuse" (and 500s). Fix: a single-writer ingest queue (threaded worker in
-prod, inline in tests) so every doc is processed once in order, and a ThreadLocalConn
-proxy so each thread gets its own connection (WAL allows concurrent connections).
-Verified: 80-file concurrent burst fully drains, 0 stuck, 0 500s. Pending docs are
-re-enqueued on startup for crash recovery.
+## Storage & data
+- **Used SQLite as the only datastore** so there's no separate DB instance to run or
+  credentials to manage — it ships inside the same Docker image as a single file. Keyword
+  search (FTS5), vectors (sqlite-vec), and the extracted tables/fields all live in that one
+  file, so everything backs up and restores together. (Postgres/pgvector is the obvious
+  scale-up path if it ever outgrows one node.)
+- **Made vector search degrade to a numpy cosine scan** if sqlite-vec (still pre-1.0) can't
+  load, so search always works instead of being a hard dependency.
+- **Gave each thread its own SQLite connection (WAL mode)** after a burst of concurrent
+  uploads sharing one connection caused "API misuse" errors.
+- **Deduplicated by file content hash** — re-uploading the same file returns the existing
+  document instead of ingesting it twice.
 
-## 2026-08-24 — fastembed offline loading: HF_HUB_OFFLINE + cache_dir (not specific_model_path)
-Discovered during the Docker build: `specific_model_path` does NOT bypass
-fastembed 0.5.x's network-first check, so an offline container still tried to
-download and failed. Fix: bake the model into an HF cache dir as the runtime
-user, set `HF_HUB_OFFLINE=1` (after the build-time bake) and pass `cache_dir`.
-Proven by `make docker-test` (boots + searches with `--network none`).
+## Ingestion & reliability
+- **Process uploads through a single background worker, one at a time.** Fire-and-forget
+  background tasks dropped work under load; a single-writer queue processes every document
+  exactly once, in order, and re-queues anything left unfinished after a restart.
+- **Validate before parsing** — a size cap plus zip-bomb / malicious-archive checks for
+  Office files, so one bad or huge upload can't take the service down.
 
-## 2026-08-24 — sqlite3.Connection needs a subclass to hold `vec_available`
-Python 3.12's C-type Connection rejects arbitrary attributes; use a thin
-`_Conn(sqlite3.Connection)` factory subclass. Caught by TDD on Task 3.
+## Search
+- **Built hybrid search** that fuses three signals — exact keyword (FTS5/BM25), meaning
+  (embeddings), and a document-title match — with Reciprocal Rank Fusion. Keyword alone
+  misses paraphrases, meaning alone misses exact IDs and ignores filenames; together they
+  cover both. (The title leg was added after documents kept being unfindable by their name.)
+- **Ran embeddings locally (BAAI/bge-small) via fastembed**, offline — no embedding API, no
+  per-query cost, works with the network switched off.
 
-## 2026-08-24 — Name: EasyNotes
-"Dump any file, find it in plain English." Friendly, low-friction feel.
-Rejected: Corpora (too academic), Stash/Trove/Shoebox.
+## Extraction
+- **Kept extraction deterministic (rules/regex), not an LLM.** It's exact, free, offline, and
+  can't hallucinate a value that isn't in the document — and extraction *is* the core of the
+  problem, so correctness matters more than cleverness.
+- **Parsed key:value pairs on a colon only (never a hyphen) and skip code/diagram blocks**,
+  after a document containing a Mermaid diagram produced ~80 junk "fields."
+- **Handled the messy real-world cases** — invoice line items, headerless CSVs, nested JSON,
+  and HTML tables — so those become clean tables/fields instead of being dropped or mangled.
+- **Made OCR opt-in** (a flag + separate install) so the default stays lean, but scanned/image
+  documents can still be read.
 
-## 2026-08-24 — LLM-free (retrieval only)
-No generation stage; `POST /answer` is a 501 slot. Reason: zero per-query
-cost, fully self-hostable. LLM answer synthesis is a documented extension.
+## LLM / Ask (optional)
+- **Kept the core LLM-free and made grounded "Ask" an optional add-on.** Retrieval,
+  extraction, and the Data views need no model and cost nothing; Ask plugs into a
+  provider-agnostic seam (any OpenAI-compatible endpoint) and stays off until a key is set.
+- **Chose Gemini 3.1 Flash-Lite (free tier) for Ask.** I compared providers on price,
+  throughput (TPS/RPM) and daily limits (RPD): Groq's free tier rate-limited too aggressively
+  for testing; OpenAI's GPT-5.x tiers are paid; and within Gemini's free models the newest
+  (3.7 Flash) was capacity-limited and returned 503s on real payloads, while full Flash has a
+  lower daily cap. Flash-Lite gives the highest free-tier throughput and RPD — which matters
+  if a reviewer tests it hard — and since it's an OpenAI-compatible endpoint, switching model
+  or provider is a one-line env change.
+- **Kept counts and totals out of the model.** Aggregate questions ("how many", "total") are
+  answered from a full-corpus structured summary, and the Insights are computed in code — so
+  the model is used for language, never for arithmetic, where it can quietly slip.
 
-## 2026-08-24 — SQLite as the only store (FTS5 + sqlite-vec)
-One file, no DB service to host, free-tier friendly. Needs no credentials
-or server — SQLite is an embedded library, the "database" is just a file.
-Rejected: Postgres/pgvector (that is the deferred "Approach B" rewrite).
+## UI / UX
+- **Four tabs — Search, Library, Data, Add** — with Search as the landing page that doubles as
+  a dashboard.
+- **Made the Data tab show records, not a BI dashboard.** I first built spend charts, then
+  removed them: the brief is "structured, queryable data," not analytics, and the charts broke
+  on non-invoice data. Each document now shows what was extracted from it, with search and
+  filters across everything.
+- **Added a light/dark toggle that defaults to the OS setting**, remembers the choice, and
+  doesn't flash on load.
+- **Added one-click sample data.** Since the database isn't committed, a fresh clone opens
+  empty, so a "Load sample data" button (shown only when there's nothing yet) populates a demo
+  corpus instantly.
 
-## 2026-08-24 — Vector fallback: numpy behind the VectorIndex interface
-sqlite-vec is pre-1.0; a numpy brute-force impl removes it as a hard
-dependency. Pinned sqlite-vec==0.1.9 (delete-path bugs elsewhere).
-
-## 2026-08-24 — Hosting: Render free + Cloudflare R2 snapshot/restore ($0)
-Render free disk is ephemeral and disks are paid-only; durability via
-snapshot/restore to R2 (10GB free, free egress). Rejected: paid Render
-disk (~$7.25/mo, simpler but not $0), Turso (gates sqlite-vec to $416/mo).
-
-## 2026-08-24 — 4 protocols only (Parser, VectorIndex, Embedder, SnapshotBackend)
-A protocol exists only where there is a second impl or a testing need.
-Rejected: Repository/ORM, TaskRunner, AnswerSynthesizer, per-file FileStorage.
+## Deployment & testing
+- **Targeted $0 hosting — Render free tier + Cloudflare R2.** The free disk is ephemeral, so
+  the database is snapshotted to R2 and restored on boot.
+- **Proved the offline claim** with a Docker test that runs a real ingest + search with the
+  network disabled.
+- **Wrote tests first throughout**, with fast network-free fakes for the embedder and the LLM
+  so the suite stays deterministic.
+- **Kept secrets in a gitignored `.env`** — never committed.
