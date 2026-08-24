@@ -25,7 +25,7 @@ def answer(body: AnswerReq, state=Depends(get_state)):
                     "ANSWER_BASE_URL=https://api.groq.com/openai/v1) or point ANSWER_BASE_URL "
                     "at a local Ollama. See README."))
     hits = run_search(state.conn, state.embedder, state.vector_index, state.fts_index,
-                      query=body.q, mode=body.mode, flt=SearchFilter(), limit=6, offset=0)
+                      query=body.q, mode=body.mode, flt=SearchFilter(), limit=10, offset=0)
     if not hits:
         return {"question": body.q, "answer": "I couldn't find anything relevant in your documents.",
                 "citations": []}
