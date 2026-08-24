@@ -11,24 +11,28 @@ def _client(tmp_path):
 
 def test_documents_link_through_shared_entities(tmp_path):
     with _client(tmp_path) as c:
-        # two docs that share the same vendor + email
+        # two docs that share the same vendor + email; one unrelated doc
         c.post("/documents/text", json={"title": "Inv A",
                "text": "Vendor: Acme Corp\nTotal Rs.100. billing@acme.com"})
         c.post("/documents/text", json={"title": "Inv B",
                "text": "Vendor: Acme Corp\nTotal Rs.200. billing@acme.com"})
+        c.post("/documents/text", json={"title": "Loner", "text": "unrelated prose, no shared values"})
         g = c.get("/graph").json()
-        kinds = [n["data"]["kind"] for n in g["nodes"]]
-        assert kinds.count("doc") == 2
-        assert "entity" in kinds
-        # a shared entity (Acme Corp / the email) connects to both documents
-        shared = [n for n in g["nodes"] if n["data"]["kind"] == "entity" and n["data"].get("shared")]
-        assert shared, "expected at least one entity shared across documents"
-        assert g["counts"]["shared"] >= 1
+        # only shared entities appear (no single-doc leaf clutter)
+        for n in g["nodes"]:
+            if n["data"]["kind"] == "entity":
+                assert n["data"]["docs"] >= 2
+        assert g["counts"]["shared_entities"] >= 1
+        assert g["counts"]["connected"] == 2 and g["counts"]["isolated"] == 1
+        # readable summary lists the shared value and the docs it links
+        assert any(conn["count"] >= 2 and set(["Inv A", "Inv B"]) <= set(conn["documents"])
+                   for conn in g["connections"])
 
 
 def test_query_highlights_matching_entity(tmp_path):
     with _client(tmp_path) as c:
-        c.post("/documents/text", json={"title": "Inv", "text": "Vendor: Acme Corp\nbilling@acme.com"})
+        c.post("/documents/text", json={"title": "Inv1", "text": "Invoice 1. Vendor: Acme Corp\nbilling@acme.com"})
+        c.post("/documents/text", json={"title": "Inv2", "text": "Invoice 2. Vendor: Acme Corp\nbilling@acme.com"})
         g = c.get("/graph", params={"q": "acme"}).json()
         assert any(n["data"].get("matched") for n in g["nodes"] if n["data"]["kind"] == "entity")
 
@@ -36,4 +40,4 @@ def test_query_highlights_matching_entity(tmp_path):
 def test_empty_graph(tmp_path):
     with _client(tmp_path) as c:
         g = c.get("/graph").json()
-        assert g["nodes"] == [] and g["edges"] == []
+        assert g["nodes"] == [] and g["edges"] == [] and g["connections"] == []

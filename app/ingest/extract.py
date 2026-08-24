@@ -32,6 +32,7 @@ def extract_fields(text: str, limit: int = 200) -> list[Field]:
     if not text:
         return []
     seen: set[tuple[str, str]] = set()
+    typed_values: set[str] = set()          # values already captured as a typed field
     out: list[Field] = []
 
     def add(key: str, value: str, kind: str):
@@ -42,6 +43,8 @@ def extract_fields(text: str, limit: int = 200) -> list[Field]:
         if sig in seen:
             return
         seen.add(sig)
+        if kind != "pair":
+            typed_values.add(value.lower())
         out.append(Field(key=key, value=value, kind=kind))
 
     for kind, rx in _COMPILED:
@@ -54,6 +57,9 @@ def extract_fields(text: str, limit: int = 200) -> list[Field]:
         k = key.strip()
         # skip URL/scheme false positives ("https://..." parses as https : //...)
         if k.lower() in _SCHEMES or val.startswith("//"):
+            continue
+        # skip a pair whose value is already a typed field (e.g. "Date: 2026-03-20")
+        if val.strip().lower() in typed_values:
             continue
         if len(val) <= 120:
             add(k, val, "pair")

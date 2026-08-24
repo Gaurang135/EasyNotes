@@ -284,8 +284,9 @@ async function renderGraph(q) {
   $("#cy-empty").style.display = g.nodes.length ? "none" : "flex";
   const cc = g.counts || {};
   $("#cy-tip").textContent = g.nodes.length
-    ? `${cc.documents} documents · ${cc.entities} entities · ${cc.shared} shared across docs${q ? " · highlighting matches" : ""}`
+    ? `${cc.shared_entities} shared value${cc.shared_entities !== 1 ? "s" : ""} linking ${cc.connected} of ${cc.documents} documents${cc.isolated ? ` · ${cc.isolated} not yet connected` : ""}`
     : "";
+  renderConnList(g.connections || []);
   const els = [...g.nodes.map((n) => ({ data: n.data })), ...g.edges.map((e) => ({ data: e.data }))];
   if (cy) cy.destroy();
   cy = cytoscape({
@@ -314,6 +315,16 @@ async function renderGraph(q) {
     if (d.kind === "doc") openDetail(d.id.slice(1));
     else toast(`${d.label} — appears in ${d.docs} document${d.docs > 1 ? "s" : ""}`, "");
   });
+}
+function renderConnList(connections) {
+  const el = $("#conn-list");
+  if (!connections.length) { el.innerHTML = ""; return; }
+  el.innerHTML = `<div class="conn-h">Shared across documents</div>` +
+    connections.map((cn) => `
+      <div class="conn-row">
+        <span class="conn-ent"><span class="conn-kind">${cn.kind}</span>${esc(cn.value)}</span>
+        <span class="conn-docs">${cn.documents.map((t) => `<span class="conn-doc">${esc(t)}</span>`).join("")}</span>
+      </div>`).join("");
 }
 
 const STOP = new Set("a an the is are was were be been am im i who what when where why how which of to in on at for and or but if it its this that as by with from do does did can could will would my me you your we".split(" "));
