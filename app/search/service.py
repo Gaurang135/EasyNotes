@@ -22,6 +22,8 @@ _AGG_CUES = [
     "list every", "all the", "every ", "distinct", "unique", "total number",
     "which companies", "which vendors", "how many invoices", "across all", "sum of",
     "average", "breakdown", "group by", "each ",
+    # item / purchase listing ("what all items i bought", "what products did I buy")
+    "what all", "bought", "did i buy", "purchase", "product", "line item", "items",
 ]
 
 
@@ -67,7 +69,7 @@ def structured_context(conn, query: str = "") -> str:
                 f"SELECT document_id, key, value, kind FROM fields WHERE kind IN ({qs})",
                 tuple(kinds)):
             by_doc.setdefault(did, []).append(
-                f"{key}={value}" if kind == "pair" else f"{kind}={value}")
+                f"{key}={value}" if kind in ("pair", "item") else f"{kind}={value}")
     lines = [f"CORPUS INVENTORY — {len(docs)} documents (the whole corpus). "
              "Format: title [type] :: field=value; …"]
     for did, title, ft in docs:
@@ -88,6 +90,7 @@ def content_terms(query: str) -> list[str]:
 # LLM-free query router: map natural-language intent to an extracted field kind, so
 # "total amount in invoices" returns the amount values directly (Mode A), not passages.
 FIELD_INTENTS = {
+    "item": ["item", "items", "product", "bought", "buy", "purchase", "line item", "goods"],
     "amount": ["amount", "total", "price", "cost", "sum", "paid", "payable", "due",
                "how much", "rupee", "dollar", "rs", "inr", "usd", "₹", "$"],
     "date": ["date", "when", "due date", "deadline", "day", "dated"],

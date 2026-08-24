@@ -18,6 +18,27 @@ def test_extracts_key_value_pairs():
     assert pairs.get("Status") == "Paid"
 
 
+def test_extracts_invoice_line_items():
+    # product names hide in the messy "Line items" run; qty + amount ride along
+    text = ("INVOICE #INV-2000 Vendor: Acme Corp Line items: Cog x8 Rs.557.17 "
+            "Gadget x18 Rs.278.75 Panel x2 Rs.161.11 Subtotal Rs.2324,000.00 "
+            "Tax Rs.418,000.00 Total Rs.2742,000.00")
+    items = [f for f in extract_fields(text) if f.kind == "item"]
+    names = {f.key for f in items}
+    assert {"Cog", "Gadget", "Panel"} <= names
+    # the item carries its quantity and price so it is queryable, not just a name
+    cog = next(f for f in items if f.key == "Cog")
+    assert "8" in cog.value and "557.17" in cog.value
+    # Subtotal / Tax / Total are NOT line items (no quantity) — must not be mistaken for products
+    assert "Subtotal" not in names and "Total" not in names and "Tax" not in names
+
+
+def test_line_items_ignored_without_quantity():
+    # a bare "Label Rs.X" (no 'xN') is a total, not a purchased item
+    text = "Total Rs.1,533.50 due. Balance Rs.0.00"
+    assert [f for f in extract_fields(text) if f.kind == "item"] == []
+
+
 def test_deduplicates():
     text = "mail me at a@b.com or a@b.com again"
     emails = [f for f in extract_fields(text) if f.kind == "email"]

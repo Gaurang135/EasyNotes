@@ -20,6 +20,13 @@ RULES: list[dict] = [
 ]
 _COMPILED = [(r["kind"], re.compile(r["pattern"])) for r in RULES]
 
+# Invoice/receipt line items hide inside a messy run like
+#   "Line items: Cog x8 Rs.557.17 Gadget x18 Rs.278.75 Subtotal Rs.2324,000.00"
+# A line item is a product name followed by a quantity ("xN") and a price; the "xN"
+# marker is what distinguishes a purchased item from a Subtotal/Tax/Total line.
+_AMOUNT = r"(?:₹|\$|€|£|Rs\.?|INR|USD|EUR)\s?\d[\d,]*(?:\.\d{1,2})?"
+_LINE_ITEM = re.compile(rf"([A-Za-z][A-Za-z0-9 \-]*?)\s+[x×](\d+)\s+({_AMOUNT})")
+
 # "Key: value" pairs on a single line (label of 1-40 chars, letters/spaces/-/_)
 _PAIR = re.compile(r"^[ \t]*([A-Za-z][\w \-/]{1,39})[ \t]*[:\-][ \t]*(.+?)[ \t]*$", re.MULTILINE)
 
@@ -39,11 +46,12 @@ def extract_fields(text: str, limit: int = 200) -> list[Field]:
         value = value.strip()
         if not value:
             return
-        sig = (kind, value.lower())
+        # named fields (pair/item) are unique per (label, value); typed fields per value
+        sig = (kind, key.lower(), value.lower()) if kind in ("pair", "item") else (kind, value.lower())
         if sig in seen:
             return
         seen.add(sig)
-        if kind != "pair":
+        if kind not in ("pair", "item"):
             typed_values.add(value.lower())
         out.append(Field(key=key, value=value, kind=kind))
 
@@ -52,6 +60,11 @@ def extract_fields(text: str, limit: int = 200) -> list[Field]:
             add(kind, m if isinstance(m, str) else m[0], kind)
             if len(out) >= limit:
                 return out
+    # line items: product name + quantity + price (e.g. "Cog x8 Rs.557.17")
+    for name, qty, amount in _LINE_ITEM.findall(text):
+        add(name.strip(), f"×{qty} · {amount}", "item")
+        if len(out) >= limit:
+            return out
     _SCHEMES = {"http", "https", "ftp", "mailto", "tel"}
     for key, val in _PAIR.findall(text):
         k = key.strip()
