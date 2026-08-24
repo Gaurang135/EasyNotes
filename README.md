@@ -12,40 +12,77 @@ as a single container, is fully self-hosted, needs **no LLM** by default (ground
 > Despite the name, EasyNotes handles far more than notes — spreadsheets, slide
 > decks, and PDFs all go in the same box.
 
-## Quick start (macOS)
+## Quick start
 
 ```bash
-bash scripts/setup-mac.sh   # installs Homebrew, Python 3.12, Docker, and deps
-make run                    # http://localhost:8000
+make setup     # create the venv, install deps, bootstrap .env  (scripts/setup.sh)
+make run       # run locally with hot reload → http://localhost:8000
 ```
 
-Prefer the container?
+On a brand-new Mac, `bash scripts/setup-mac.sh` installs Homebrew, Python 3.12 and
+Docker first, then calls `make setup`. Prefer the container? `make docker-run`
+builds the image **and** runs it at http://localhost:8000.
 
-```bash
-make docker-run             # builds the image AND runs it at http://localhost:8000
-```
+Run `make` with no target for the full list. The common ones:
 
 | Command | What it does |
 |---|---|
+| **Dev** | |
+| `make setup` | Create the venv, install deps, bootstrap `.env` (runs `scripts/setup.sh`) |
 | `make run` | Run locally with hot reload |
 | `make test` | Run the full test suite |
 | `make eval` | Print retrieval quality (recall@10, MRR) per mode |
-| `make docker-build` | Build the Docker image only |
+| `make lint` | Lint with ruff |
+| **Docker** | |
 | `make docker-run` | Build the image **and** run the container locally |
 | `make docker-test` | Prove the container boots + searches with **no network** |
 | `make docker-stop` | Stop the local container |
+| **Release** | |
+| `make docker-push` | Log in to Docker Hub and push `$DOCKER_USER/easynotes` (set `DOCKER_USER` in the Makefile) |
+| `make github-push` | Push all commits to GitHub (`Gaurang135/EasyNotes`) |
+| `make zip` | Package the project into `dist/easynotes.zip` for moving to another machine |
+
+**Moving to another machine:** `make zip` produces `dist/easynotes.zip` — it excludes
+`.venv/` (regenerated), `.env` (secrets), and `data/` (recreated on boot), but keeps the
+full `.git` history. On the new box: `unzip easynotes.zip -d easynotes && cd easynotes &&
+make setup`, then copy `.env.example` → `.env` and add your key.
 
 ## How it works (architecture)
 
+> The diagrams below are [Mermaid](https://mermaid.js.org) — GitHub renders them inline.
+> (Placeholders you can later swap for exported images.)
+
+**Ingestion pipeline** — messy file in, clean structured data out:
+
+```mermaid
+flowchart LR
+  U["Upload<br/>(file or pasted text)"] --> V["Validate<br/>size · MIME sniff · dedup · zip-bomb"]
+  V --> P["Parse<br/>one module per format"]
+  P --> C["Chunk<br/>~300 tokens · contextual headers"]
+  P --> X["Extract<br/>typed tables + key-value fields"]
+  C --> E["Embed<br/>bge-small · 384-dim · ONNX · no LLM"]
+  E --> IV[("Vector index<br/>sqlite-vec")]
+  C --> IK[("Keyword index<br/>FTS5 / BM25")]
+  X --> DB[("Tables & fields<br/>SQLite")]
+  IV & IK & DB --> R((Ready to query))
 ```
-Upload (file or pasted text)
-   → Validate (size, MIME sniff, dedup, zip-bomb limits)
-   → Parse   (one module per format → text blocks + metadata)
-   → Chunk   (~300 model-tokens, contextual headers; tables by row-group)
-   → Embed   (fastembed bge-small-en-v1.5, 384-dim, ONNX — no LLM)
-   → Extract (typed tables from CSV/XLSX/DOCX; config-driven key-value fields)
-   → Index   (SQLite FTS5 for keyword  +  sqlite-vec for semantic)
-   → Query   (structured filters over tables/fields  |  keyword | semantic | hybrid)
+
+**Query paths** — three retrieval modes, exact aggregates, and the optional LLM answer:
+
+```mermaid
+flowchart TD
+  Q["User question"] --> AGG{"Aggregate?<br/>count / list-all / total"}
+  AGG -- yes --> SC["structured_context<br/>whole-library summary"]
+  AGG -- no --> H["Hybrid retrieval"]
+  H --> KW["keyword<br/>FTS5/BM25"]
+  H --> SEM["semantic<br/>embeddings"]
+  H --> TIT["title match"]
+  KW & SEM & TIT --> RRF["Reciprocal Rank Fusion<br/>k=60"]
+  RRF --> TOP["Top passages"]
+  SC --> ASK{"Ask enabled?"}
+  TOP --> ASK
+  ASK -- "no (default)" --> RES["Ranked results<br/>+ Direct field answers"]
+  ASK -- yes --> LLM["Grounded answer + citations<br/>(any OpenAI-compatible model)"]
 ```
 
 **One process, one file.** FastAPI serves the API and UI; SQLite is the only
@@ -59,7 +96,7 @@ datastore (no database server to run, **no credentials to procure** — the
   language.
 - **hybrid** (default) — fuses both with RRF (`k=60`), no tuning.
 
-**The Data view** turns the corpus into structured data you can query precisely:
+**The Data view** turns your library into structured data you can query precisely:
 every CSV/XLSX/table becomes a typed table (filter/sort by column), and every
 extracted key-value (vendor, amount, date, email…) is one unified, filterable
 dataset across all documents.
@@ -83,7 +120,7 @@ for pure local use.
 | `app/search/fts.py` | FTS5 keyword index + query sanitizer |
 | `app/search/service.py` | Shared retrieval + field-intent router (Direct answers) |
 | `app/ingest/extract.py` | Config-driven field extraction + column type inference |
-| `app/api/structured.py` | Tables, fields, per-document detail, corpus stats |
+| `app/api/structured.py` | Tables, fields, per-document detail, library stats |
 | `app/persistence/` | Snapshot/restore backends (local / S3 / none) |
 
 ## API
@@ -95,7 +132,7 @@ for pure local use.
 | `GET /documents` / `GET /documents/{id}` | List / status |
 | `DELETE /documents/{id}` | Remove a document (and all its index rows) |
 | `GET /search?q=&mode=&type=&doc_id=` | Search (+ Direct answers for field queries) |
-| `GET /stats` · `GET /overview` | Corpus stats · per-document extracted-structure summary |
+| `GET /stats` · `GET /overview` | Library stats · per-document extracted-structure summary |
 | `GET /tables` · `GET /tables/{id}/rows?col=&op=&val=&sort=` | Structured tables + typed queries |
 | `GET /fields?kind=&q=` | Extracted key-value fields across all documents |
 | `GET /documents/{id}/detail` · `GET /documents/{id}/download` | Extracted structure · original file |

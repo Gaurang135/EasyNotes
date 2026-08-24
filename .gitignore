@@ -8,7 +8,10 @@ data/
 models/
 .pytest_cache/
 
-# local-only helper, never commit
+# packaged zip output (make zip)
+dist/
+
+# local-only helper, never commit (superseded by scripts/github-push.sh)
 push_all.sh
 
 # secrets — never commit
