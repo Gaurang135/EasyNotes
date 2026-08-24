@@ -13,3 +13,5 @@ push_all.sh
 
 # secrets — never commit
 .env
+.coverage
+htmlcov/
