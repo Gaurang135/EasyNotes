@@ -41,11 +41,14 @@ wireSegmented("#data-modes", "#dseg-glow", "dmode");
 /* ---------- search mode picker ---------- */
 const modeGlow = $("#mode-glow");
 let searchMode = "hybrid";
-$$(".mode").forEach((m) => m.addEventListener("click", () => {
-  $$(".mode").forEach((x) => x.classList.toggle("is-active", x === m));
-  searchMode = m.dataset.m; slide(modeGlow, m);
-  const btn = $("#search-btn"); if (btn) btn.textContent = searchMode === "ask" ? "Ask" : "Search";
-}));
+let modeDefaulted = false;                 // adaptive landing default applied once, on load
+function activateMode(btn) {
+  if (!btn) return;
+  $$(".mode").forEach((x) => x.classList.toggle("is-active", x === btn));
+  searchMode = btn.dataset.m; slide(modeGlow, btn);
+  const sb = $("#search-btn"); if (sb) sb.textContent = searchMode === "ask" ? "Ask" : "Search";
+}
+$$(".mode").forEach((m) => m.addEventListener("click", () => activateMode(m)));
 
 function positionGlows() {
   slide(tabGlow, $(".tab.is-active"));
@@ -68,6 +71,12 @@ function toast(msg, kind = "") {
 /* ---------- dashboard stats ---------- */
 async function loadStats() {
   let s; try { s = await (await fetch("/stats")).json(); } catch { return; }
+  // adaptive default: land on ✦ Ask when a generation model is configured, else Hybrid —
+  // so a keyless run never opens on a feature that would 501. Applied once, pre-interaction.
+  if (!modeDefaulted) {
+    modeDefaulted = true;
+    if (s.ask_enabled) activateMode($$(".mode").find((m) => m.dataset.m === "ask"));
+  }
   const tiles = [["Documents", s.documents], ["Tables", s.tables], ["Fields", s.fields], ["Chunks", s.chunks]];
   $("#stats").innerHTML = tiles.map(([l, n], i) =>
     `<div class="stat" style="animation-delay:${i * 60}ms"><div class="n">${n}</div><div class="l">${l}</div></div>`).join("");

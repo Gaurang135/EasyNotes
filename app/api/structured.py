@@ -18,6 +18,8 @@ def stats(state=Depends(get_state)):
         "tables": c.execute("SELECT count(*) FROM tables").fetchone()[0],
         "fields": c.execute("SELECT count(*) FROM fields").fetchone()[0],
         "by_type": by_type,
+        # lets the UI default the landing to Ask only when a generation model is configured
+        "ask_enabled": getattr(state, "answer_synth", None) is not None,
     }
 
 
