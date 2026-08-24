@@ -11,6 +11,9 @@ models/
 # packaged zip output (make zip)
 dist/
 
+# internal dev-process artifacts (Superpowers specs/plans) — kept locally, not pushed
+docs/
+
 # local-only helper, never commit (superseded by scripts/github-push.sh)
 push_all.sh
 
