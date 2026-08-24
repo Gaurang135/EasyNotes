@@ -195,12 +195,33 @@ async function runAsk(q, box) {
   if (!r.ok) { box.innerHTML = `<p class="empty">${esc(d.detail || "answer error")}</p>`; return; }
   const cites = (d.citations || []).map((c) =>
     `<span class="cite" data-doc="${c.document_id}">${esc(c.document_title)}</span>`).join("");
-  const answer = esc(d.answer).replace(/\[([^\]]+)\]/g, "<b>[$1]</b>");
   box.innerHTML = `<div class="answer-card">
     <div class="answer-h">✦ Answer</div>
-    <div class="answer-body">${answer}</div>
+    <div class="answer-body">${renderMarkdown(d.answer)}</div>
     ${cites ? `<div class="answer-cites"><span class="cites-l">Sources</span>${cites}</div>` : ""}</div>`;
   $$("#results .cite").forEach((el) => el.addEventListener("click", () => openDetail(el.dataset.doc)));
+}
+
+/* tiny markdown renderer for grounded answers (bold, bullets, inline citations) */
+function renderMarkdown(raw) {
+  const inline = (s) => s
+    .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+    .replace(/【([^】]+)】/g, '<span class="cite-mark">$1</span>')
+    .replace(/\[([^\]]+)\]/g, '<span class="cite-mark">$1</span>');
+  const lines = esc(raw || "").split(/\r?\n/);
+  let html = "", inList = false;
+  for (const line of lines) {
+    const t = line.trim();
+    if (/^[-*]\s+/.test(t)) {
+      if (!inList) { html += "<ul>"; inList = true; }
+      html += "<li>" + inline(t.replace(/^[-*]\s+/, "")) + "</li>";
+    } else {
+      if (inList) { html += "</ul>"; inList = false; }
+      if (t) html += "<p>" + inline(t) + "</p>";
+    }
+  }
+  if (inList) html += "</ul>";
+  return html;
 }
 
 /* ---------- document detail (messy doc -> extracted structured data) ---------- */

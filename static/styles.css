@@ -184,8 +184,13 @@ textarea.field { resize: vertical; line-height: 1.6; }
 .answer-card.off { border-color: var(--line-strong); }
 .answer-h { font: 600 12px "JetBrains Mono", monospace; letter-spacing: .14em; text-transform: uppercase; color: var(--ember-hot); margin-bottom: 12px; }
 .answer-body { color: var(--text); font-size: 15.5px; line-height: 1.7; }
+.answer-body p { margin: 0 0 10px; }
+.answer-body p:last-child { margin-bottom: 0; }
+.answer-body ul { margin: 6px 0 12px; padding-left: 20px; }
+.answer-body li { margin: 4px 0; }
+.answer-body strong { color: var(--ember-hot); font-weight: 600; }
 .answer-body code { font: 500 12.5px "JetBrains Mono", monospace; background: rgba(255,255,255,.06); padding: 1px 6px; border-radius: 6px; }
-.answer-body b { color: var(--ember-hot); font-weight: 600; }
+.cite-mark { font: 500 11px "JetBrains Mono", monospace; color: var(--teal); opacity: .85; }
 .answer-cites { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--line); }
 .cites-l { font: 500 11px "JetBrains Mono", monospace; color: var(--faint); text-transform: uppercase; letter-spacing: .1em; }
 .cite { cursor: pointer; font-size: 13px; color: var(--teal); border: 1px solid rgba(95,211,198,.35); border-radius: 999px; padding: 4px 12px; transition: all .2s var(--ease); }
