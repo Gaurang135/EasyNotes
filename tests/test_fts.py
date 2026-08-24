@@ -29,6 +29,28 @@ def test_bm25_orders_denser_match_first(tmp_path):
     assert hits[0].score >= hits[-1].score
 
 
+def test_natural_language_query_matches_on_content_word(tmp_path):
+    # "who is free" must still find a doc that says "free" — the stopwords who/is
+    # must not force an AND that requires all three words in one chunk.
+    conn = db.connect(str(tmp_path / "f.db"))
+    db.init_schema(conn)
+    _seed(conn, "Soon I will be free at last")
+    idx = Fts5Index(conn)
+    hits = idx.search(sanitize_fts_query("who is free"), SearchFilter(), 10, 0)
+    assert len(hits) >= 1
+
+
+def test_multi_term_query_is_or_not_strict_and(tmp_path):
+    # a doc with only ONE of the content terms should still match (OR semantics)
+    conn = db.connect(str(tmp_path / "f.db"))
+    db.init_schema(conn)
+    _seed(conn, "quarterly revenue report")
+    idx = Fts5Index(conn)
+    hits = idx.search(sanitize_fts_query("revenue and headcount projections"),
+                      SearchFilter(), 10, 0)
+    assert len(hits) >= 1
+
+
 def _seed(conn, text, chunk_id=1, seq=0):
     conn.execute("INSERT OR IGNORE INTO documents(id,filename,title,file_type,size,status,content_hash,uploaded_at)"
                  " VALUES (1,'a','a','txt',1,'ready','h','2026')")

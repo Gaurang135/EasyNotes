@@ -6,25 +6,53 @@ from app.models import ScoredChunk, SearchFilter
 _TOKEN = re.compile(r'"[^"]*"|\S+')
 _KEEP = {"AND", "OR", "NOT", "NEAR"}
 
+# Stopwords dropped from natural-language queries so a question like "who is free"
+# searches on "free", not on who/is. Shared with search snippet-anchoring.
+STOPWORDS = {
+    "a", "an", "the", "is", "are", "was", "were", "be", "been", "am", "im", "i",
+    "who", "what", "when", "where", "why", "how", "which", "whom",
+    "of", "to", "in", "on", "at", "for", "and", "or", "but", "if", "it", "its",
+    "this", "that", "these", "those", "as", "by", "with", "from", "do", "does",
+    "did", "can", "could", "will", "would", "my", "me", "you", "your", "we",
+}
+
+
+def _quote(term: str) -> str:
+    return '"' + term.replace('"', '""') + '"'
+
 
 def sanitize_fts_query(raw: str) -> str:
-    """Make any user string safe for FTS5 MATCH while preserving quoted phrases
-    and top-level uppercase boolean operators. Datasette-style."""
+    """Make any user string safe for FTS5 MATCH.
+
+    Plain natural-language questions are the common case: we drop stopwords and OR the
+    remaining terms so "who is free" matches any chunk containing "free" (BM25 then ranks
+    denser/rarer matches higher) — rather than the old implicit AND of every word, which
+    required who AND is AND free in one chunk and usually matched nothing.
+
+    Power-user syntax is respected: if the query already uses quotes or an explicit
+    AND/OR/NOT/NEAR operator, its structure is preserved (terms just get quoted safely)."""
     if not raw or not raw.strip():
         return '""'
-    out: list[str] = []
-    for tok in _TOKEN.findall(raw):
-        if tok.startswith('"') and tok.endswith('"') and len(tok) >= 2:
-            inner = tok[1:-1].replace('"', '""')
-            if inner.strip():
-                out.append(f'"{inner}"')
-            continue
-        if tok in _KEEP:
-            out.append(tok)
-            continue
-        cleaned = tok.replace('"', '""')
-        out.append(f'"{cleaned}"')
-    return " ".join(out) or '""'
+    tokens = _TOKEN.findall(raw)
+    explicit = any(t in _KEEP for t in tokens) or any(
+        t.startswith('"') and t.endswith('"') and len(t) >= 2 for t in tokens)
+    if explicit:
+        out: list[str] = []
+        for tok in tokens:
+            if tok.startswith('"') and tok.endswith('"') and len(tok) >= 2:
+                inner = tok[1:-1].replace('"', '""')
+                if inner.strip():
+                    out.append(f'"{inner}"')
+            elif tok in _KEEP:
+                out.append(tok)
+            else:
+                out.append(_quote(tok))
+        return " ".join(out) or '""'
+    # natural language: drop stopwords, OR the rest (fall back to all terms if all were stopwords)
+    terms = [t for t in tokens if re.sub(r"\W", "", t)]
+    content = [t for t in terms if t.lower() not in STOPWORDS]
+    use = content or terms
+    return " OR ".join(_quote(t) for t in use) or '""'
 
 
 class Fts5Index:

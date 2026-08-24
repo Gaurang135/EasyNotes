@@ -1,20 +1,13 @@
 from __future__ import annotations
 import re
 from app.models import SearchHit, SearchFilter
-from app.search.fts import sanitize_fts_query
+from app.search.fts import sanitize_fts_query, STOPWORDS
 from app.search.rrf import rrf
 
 FUSION_DEPTH = 100
 
-# Stopwords are ignored when anchoring/ highlighting snippets, so a query like
-# "who is free" centers on "free", not on the first "is".
-STOPWORDS = {
-    "a", "an", "the", "is", "are", "was", "were", "be", "been", "am", "im", "i",
-    "who", "what", "when", "where", "why", "how", "which", "whom",
-    "of", "to", "in", "on", "at", "for", "and", "or", "but", "if", "it", "its",
-    "this", "that", "these", "those", "as", "by", "with", "from", "do", "does",
-    "did", "can", "could", "will", "would", "my", "me", "you", "your", "we",
-}
+# STOPWORDS (shared with the FTS sanitizer) are ignored when anchoring/highlighting
+# snippets, so a query like "who is free" centers on "free", not on the first "is".
 
 
 _AGG_CUES = [
