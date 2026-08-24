@@ -2,11 +2,12 @@
 
 **Dump any file, find it in plain English.**
 
-EasyNotes ingests unstructured documents — PDF, DOCX, PPTX, XLSX, CSV, Markdown,
-plain text, or pasted notes — and makes them searchable by keyword, natural
-language, or a hybrid of both, with an interactive similarity graph of your
-corpus. It runs as a single container, is fully self-hosted, uses **no LLM**, and
-costs **nothing per query**.
+EasyNotes ingests unstructured/semi-structured documents — PDF, DOCX, PPTX,
+XLSX, CSV, Markdown, plain text, or pasted notes — and turns them into **clean,
+structured data you can query two ways**: precise, spreadsheet-style filters over
+extracted tables & fields, or natural-language / keyword / hybrid search. It runs
+as a single container, is fully self-hosted, uses **no LLM**, and costs **nothing
+per query**.
 
 > Despite the name, EasyNotes handles far more than notes — spreadsheets, slide
 > decks, and PDFs all go in the same box.
@@ -42,9 +43,9 @@ Upload (file or pasted text)
    → Parse   (one module per format → text blocks + metadata)
    → Chunk   (~300 model-tokens, contextual headers; tables by row-group)
    → Embed   (fastembed bge-small-en-v1.5, 384-dim, ONNX — no LLM)
+   → Extract (typed tables from CSV/XLSX/DOCX; config-driven key-value fields)
    → Index   (SQLite FTS5 for keyword  +  sqlite-vec for semantic)
-   → Search  (keyword | semantic | hybrid via Reciprocal Rank Fusion)
-   → Graph   (cross-document similarity edges, rendered with Cytoscape.js)
+   → Query   (structured filters over tables/fields  |  keyword | semantic | hybrid)
 ```
 
 **One process, one file.** FastAPI serves the API and UI; SQLite is the only
@@ -58,9 +59,10 @@ datastore (no database server to run, **no credentials to procure** — the
   language.
 - **hybrid** (default) — fuses both with RRF (`k=60`), no tuning.
 
-**The similarity graph** shows each document as a node (sized by chunk count,
-colored by type) with edges between semantically similar documents. Typing a
-query lights up the matching nodes.
+**The Data view** turns the corpus into structured data you can query precisely:
+every CSV/XLSX/table becomes a typed table (filter/sort by column), and every
+extracted key-value (vendor, amount, date, email…) is one unified, filterable
+dataset across all documents.
 
 **Durability without a server.** SQLite is embedded, so on an ephemeral host the
 disk is wiped on restart. EasyNotes snapshots the DB (`VACUUM INTO`) to
@@ -79,8 +81,9 @@ for pure local use.
 | `app/search/embeddings.py` | fastembed embedder (query/passage split) |
 | `app/search/vectors.py` | sqlite-vec index + numpy fallback (one interface) |
 | `app/search/fts.py` | FTS5 keyword index + query sanitizer |
-| `app/search/service.py` | Shared retrieval used by search, graph, and the answer slot |
-| `app/graph/` | Similarity-edge computation + Cytoscape/GraphML export |
+| `app/search/service.py` | Shared retrieval + field-intent router (Direct answers) |
+| `app/ingest/extract.py` | Config-driven field extraction + column type inference |
+| `app/api/structured.py` | Tables, fields, per-document detail, corpus stats |
 | `app/persistence/` | Snapshot/restore backends (local / S3 / none) |
 
 ## API
@@ -91,9 +94,11 @@ for pure local use.
 | `POST /documents/text` | Ingest pasted text (`{title, text}`) |
 | `GET /documents` / `GET /documents/{id}` | List / status |
 | `DELETE /documents/{id}` | Remove a document (and all its index rows) |
-| `GET /search?q=&mode=&type=&doc_id=&limit=&offset=` | Search |
-| `GET /graph` / `GET /graph?q=` | Similarity graph (with query highlighting) |
-| `GET /graph/export` | GraphML export (Gephi-compatible) |
+| `GET /search?q=&mode=&type=&doc_id=` | Search (+ Direct answers for field queries) |
+| `GET /stats` · `GET /overview` | Corpus stats · per-document extracted-structure summary |
+| `GET /tables` · `GET /tables/{id}/rows?col=&op=&val=&sort=` | Structured tables + typed queries |
+| `GET /fields?kind=&q=` | Extracted key-value fields across all documents |
+| `GET /documents/{id}/detail` · `GET /documents/{id}/download` | Extracted structure · original file |
 | `POST /answer` | **501** — the LLM slot (see below) |
 | `GET /healthz` | Health check |
 
@@ -107,7 +112,7 @@ curl "localhost:8000/search?q=refund%20policy&mode=hybrid"
 ## Configuration (env vars)
 
 `DATA_DIR`, `MAX_UPLOAD_MB`, `EMBED_MODEL`, `EMBED_CACHE_DIR`, `EMBED_MODEL_PATH`,
-`EMBED_THREADS` (default 1), `EMBED_BATCH_SIZE`, `EDGE_SIMILARITY_FLOOR`, and the
+`EMBED_THREADS` (default 1), `EMBED_BATCH_SIZE`, `INGEST_MODE` (threaded|inline), and the
 snapshot block: `SNAPSHOT_BACKEND` (`none`|`local`|`s3`), `SNAPSHOT_ENDPOINT`,
 `SNAPSHOT_BUCKET`, `SNAPSHOT_ACCESS_KEY`, `SNAPSHOT_SECRET_KEY`,
 `SNAPSHOT_INTERVAL_S`.

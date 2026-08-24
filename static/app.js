@@ -19,7 +19,6 @@ function activateTab(btn) {
   slide(tabGlow, btn);
   const v = btn.dataset.view;
   if (v === "search") { loadStats(); loadOverview(); }
-  if (v === "graph") renderGraph();
   if (v === "add") loadRecent();
   if (v === "data") { loadAllTables(); loadFields(); }
 }
@@ -274,58 +273,6 @@ async function loadFields() {
 }
 let fieldFilterTimer = null;
 $("#field-filter").addEventListener("input", () => { clearTimeout(fieldFilterTimer); fieldFilterTimer = setTimeout(loadFields, 200); });
-
-/* ---------- graph ---------- */
-$("#graph-form").addEventListener("submit", (ev) => { ev.preventDefault(); renderGraph($("#graph-q").value.trim()); });
-let cy = null;
-async function renderGraph(q) {
-  if (window.__noCyto || typeof cytoscape === "undefined") { $("#cy").style.display = "none"; $("#cy-fallback").hidden = false; return; }
-  const g = await (await fetch(q ? `/graph?q=${encodeURIComponent(q)}` : "/graph")).json();
-  $("#cy-empty").style.display = g.nodes.length ? "none" : "flex";
-  const cc = g.counts || {};
-  $("#cy-tip").textContent = g.nodes.length
-    ? `${cc.shared_entities} shared value${cc.shared_entities !== 1 ? "s" : ""} linking ${cc.connected} of ${cc.documents} documents${cc.isolated ? ` · ${cc.isolated} not yet connected` : ""}`
-    : "";
-  renderConnList(g.connections || []);
-  const els = [...g.nodes.map((n) => ({ data: n.data })), ...g.edges.map((e) => ({ data: e.data }))];
-  if (cy) cy.destroy();
-  cy = cytoscape({
-    container: $("#cy"), elements: els, minZoom: 0.2, maxZoom: 2.5,
-    style: [
-      { selector: "node[kind='doc']", style: { "background-color": "#8892a6", shape: "round-rectangle",
-        label: "data(label)", color: "#eef0f5", "font-size": 11, "font-weight": 600, "font-family": "Instrument Sans, sans-serif",
-        width: 30, height: 30, "text-valign": "bottom", "text-margin-y": 5, "text-max-width": 130, "text-wrap": "ellipsis",
-        "border-width": 2, "border-color": "rgba(255,255,255,.2)", opacity: q ? 0.3 : 1,
-        "transition-property": "opacity", "transition-duration": "300ms" } },
-      { selector: "node[kind='entity']", style: { "background-color": "data(color)", shape: "ellipse",
-        label: "data(label)", color: "#c9cdd8", "font-size": 10, "font-family": "JetBrains Mono, monospace",
-        width: "mapData(size,1,6,16,44)", height: "mapData(size,1,6,16,44)",
-        "text-valign": "bottom", "text-margin-y": 4, "text-max-width": 110, "text-wrap": "ellipsis",
-        "border-width": 0, opacity: q ? 0.28 : 0.95, "transition-property": "opacity", "transition-duration": "300ms" } },
-      { selector: "node[?shared]", style: { "border-width": 2, "border-color": "rgba(255,255,255,.35)" } },
-      { selector: "node[?matched]", style: { opacity: 1, "border-width": 4, "border-color": "#f2a65a",
-        "shadow-blur": 28, "shadow-color": "#f2a65a", "shadow-opacity": 0.9 } },
-      { selector: "edge", style: { width: 1.4, "line-color": "#333c4c", "curve-style": "bezier",
-        opacity: q ? 0.1 : 0.4, "transition-property": "opacity", "transition-duration": "300ms" } },
-    ],
-    layout: { name: "cose", animate: true, animationDuration: 700, idealEdgeLength: 90, nodeRepulsion: 8000 },
-  });
-  cy.on("tap", "node", (e) => {
-    const d = e.target.data();
-    if (d.kind === "doc") openDetail(d.id.slice(1));
-    else toast(`${d.label} — appears in ${d.docs} document${d.docs > 1 ? "s" : ""}`, "");
-  });
-}
-function renderConnList(connections) {
-  const el = $("#conn-list");
-  if (!connections.length) { el.innerHTML = ""; return; }
-  el.innerHTML = `<div class="conn-h">Shared across documents</div>` +
-    connections.map((cn) => `
-      <div class="conn-row">
-        <span class="conn-ent"><span class="conn-kind">${cn.kind}</span>${esc(cn.value)}</span>
-        <span class="conn-docs">${cn.documents.map((t) => `<span class="conn-doc">${esc(t)}</span>`).join("")}</span>
-      </div>`).join("");
-}
 
 const STOP = new Set("a an the is are was were be been am im i who what when where why how which of to in on at for and or but if it its this that as by with from do does did can could will would my me you your we".split(" "));
 function mark(text, q) {

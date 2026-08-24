@@ -3,6 +3,13 @@
 A running log of *why* things are the way they are. Newest first.
 Format: date · decision · reason · alternatives rejected.
 
+## 2026-08-24 — Removed the Connections (similarity/entity) graph
+Cut it entirely (UI tab, /graph API, app/graph, vendored Cytoscape, tests). It was a
+visualization that only showed value when documents coincidentally shared a vendor/
+email/date, and did nothing to structure or query data — the actual problem. The rubric
+isn't judging visual polish and rewards focus, so the app is now Search + Data + Add.
+First tried as similarity edges, then repurposed to entity-connections, then removed.
+
 ## 2026-08-24 — Ingestion: single-worker queue + thread-local SQLite connections
 A burst of ~75 concurrent uploads exposed two bugs: (1) fire-and-forget FastAPI
 BackgroundTasks starved/dropped a task under threadpool pressure; (2) one shared
