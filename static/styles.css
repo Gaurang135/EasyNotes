@@ -463,8 +463,28 @@ textarea.field { resize: vertical; line-height: 1.6; }
 
 @media (max-width: 760px) { .stats { grid-template-columns: repeat(2, 1fr); } }
 @media (max-width: 640px) {
-  .masthead { padding: 28px 18px 16px; }
-  main { padding: 8px 18px 60px; }
+  .masthead { padding: 24px 16px 14px; gap: 14px; }
+  main { padding: 8px 16px 64px; }
+  h1 { font-size: 26px; }
+  /* Give the header actions the full row so the theme toggle can never be pushed
+     off-screen; the tab bar scrolls horizontally if the labels don't all fit. */
+  .head-actions { width: 100%; justify-content: space-between; gap: 8px; }
+  .tabs { flex: 1; min-width: 0; overflow-x: auto; -webkit-overflow-scrolling: touch;
+          scrollbar-width: none; }
+  .tabs::-webkit-scrollbar { display: none; }
+  .tab { padding: 9px 15px; }
+  .theme-switch { flex: none; }
   .searchbar { flex-direction: column; align-items: stretch; }
-  .modepick { justify-content: center; }
+  .modepick { justify-content: center; flex-wrap: wrap; }
+  /* Library rows: taller + wrapping so the title, meta and actions each get room
+     (single-line rows are too cramped and the title truncates hard on a phone). */
+  .recent li { flex-wrap: wrap; row-gap: 10px; padding: 16px 15px; }
+  .recent li .doc-name { flex-basis: 100%; }    /* title on its own line */
+  .doc-meta { margin-left: 0; white-space: normal; }
+  .doc-actions { margin-left: auto; }            /* status + download + delete on the next line */
+  .recent li:hover { transform: none; }          /* no sideways nudge on touch */
+  .iconbtn { width: 34px; height: 34px; }        /* comfortable tap targets */
+  .modal-card { margin: 12px; max-width: none; width: auto; }
+  .fieldgrid, .answers-grid { grid-template-columns: 1fr; }
 }
+@media (max-width: 340px) { .stats { grid-template-columns: 1fr; } }

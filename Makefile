@@ -1,14 +1,14 @@
 # EasyNotes — one-command workflows.  Run `make` (or `make help`) to list targets.
 #
 # ── EDIT ME before `make docker-push` ────────────────────────────────────────
-DOCKER_USER ?= CHANGEME          # your Docker Hub username → image is $(DOCKER_USER)/easynotes
+DOCKER_USER ?= yash1969          # your Docker Hub username → image is $(DOCKER_USER)/easynotes
 # ─────────────────────────────────────────────────────────────────────────────
 
 PY       := python3.12
 VENV     := .venv
 BIN      := $(VENV)/bin
 IMAGE    := easynotes:local
-PORT     ?= 8000
+PORT     ?= 8081
 DATA_DIR ?= $(PWD)/data
 
 .DEFAULT_GOAL := help

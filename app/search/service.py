@@ -15,6 +15,10 @@ _AGG_CUES = [
     "list every", "all the", "every ", "distinct", "unique", "total number",
     "which companies", "which vendors", "how many invoices", "across all", "sum of",
     "average", "breakdown", "group by", "each ",
+    # totals / spend ("total amount spent on food", "how much did I spend", "grand total")
+    "total amount", "total spent", "total cost", "total value", "total price",
+    "grand total", "how much did", "how much have", "how much was", "total for",
+    "total on", "spent on",
     # item / purchase listing ("what all items i bought", "what products did I buy")
     "what all", "bought", "did i buy", "purchase", "product", "line item", "items",
 ]

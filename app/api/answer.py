@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from app.models import SearchFilter
 from app.search.service import run_search, detect_aggregate_intent, structured_context
+from app.answer import reconcile_listed_total
 from app.api.deps import get_state
 
 router = APIRouter()
@@ -49,4 +50,6 @@ def answer(body: AnswerReq, state=Depends(get_state)):
         raise HTTPException(502, f"answer provider error: {e}")
     except Exception as e:                        # provider/network errors never 500 the app
         raise HTTPException(502, f"answer provider error: {e}")
+    # Never let a model arithmetic slip reach the user: recompute any itemized total in code.
+    result["answer"] = reconcile_listed_total(result.get("answer", ""))
     return {"question": body.q, "aggregate": aggregate, **result}

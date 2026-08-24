@@ -7,6 +7,7 @@ Answers are grounded strictly in retrieved excerpts and cite their sources.
 """
 from __future__ import annotations
 import json
+import re
 import time
 import urllib.request
 import urllib.error
@@ -70,6 +71,57 @@ def _context(hits, max_chars_each: int = 1200) -> str:
         text = h.text if len(h.text) <= max_chars_each else h.text[:max_chars_each] + "…"
         parts.append(f"[{h.document_title}{loc}]\n{text}")
     return "\n\n".join(parts)
+
+
+# A money amount: either currency-prefixed (Rs./INR/₹/$) or a plain number with a 2-decimal
+# part. Requiring the decimal for un-prefixed numbers means long id-like integers inside a
+# title or citation (e.g. Order_Invoice8496177888) are never mistaken for an amount.
+_AMOUNT_RE = re.compile(r'(?:rs\.?|inr|₹|\$)\s*(\d[\d,]*(?:\.\d+)?)|(\d[\d,]*\.\d{2})(?!\d)', re.I)
+
+
+def _amounts(s: str):
+    """Yield (value, num_start, num_end) for every money amount in a line, left to right."""
+    for m in _AMOUNT_RE.finditer(s):
+        if m.group(1) is not None:
+            tok, ns, ne = m.group(1), m.start(1), m.end(1)
+        else:
+            tok, ns, ne = m.group(2), m.start(2), m.end(2)
+        yield float(tok.replace(",", "")), ns, ne
+
+
+def reconcile_listed_total(answer: str) -> str:
+    """Correct an itemized total the model added up wrong.
+
+    Language models reliably *itemize* but slip on *arithmetic* (seen in production:
+    271.43+232.26+470.42+424.61+341.46 reported as 1,641.76 instead of 1,740.18). When the
+    answer both lists a per-item breakdown (>=2 bulleted amounts) and states a total, we
+    recompute the total from the listed amounts in code and fix the stated figure. This
+    respects the model's own selection of which items count — it only replaces the addition.
+    Conservative: with no clear breakdown it returns the answer unchanged, so non-total
+    answers are never touched.
+    """
+    lines = answer.splitlines()
+    bullet_vals = []
+    for ln in lines:
+        if ln.lstrip()[:1] in ("*", "-", "•"):
+            for val, _s, _e in _amounts(ln):
+                bullet_vals.append(val)
+                break                                   # the item's own amount is the first
+    if len(bullet_vals) < 2:
+        return answer
+    correct = round(sum(bullet_vals), 2)
+    for i, ln in enumerate(lines):
+        if ln.lstrip()[:1] in ("*", "-", "•") or "total" not in ln.lower():
+            continue
+        found = list(_amounts(ln))
+        if not found:
+            continue
+        val, ns, ne = found[0]
+        if abs(val - correct) >= 0.01:                  # replace only the numeric token
+            fmt = f"{correct:,.2f}" if "." in ln[ns:ne] else f"{correct:,.0f}"
+            lines[i] = ln[:ns] + fmt + ln[ne:]
+        break                                           # only the first total statement
+    return "\n".join(lines)
 
 
 def _citations(hits) -> list[dict]:
