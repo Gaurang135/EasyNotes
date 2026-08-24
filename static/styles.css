@@ -168,6 +168,33 @@ textarea.field { resize: vertical; line-height: 1.6; }
 .pill.processing::before, .pill.pending::before { animation: blink 1s infinite; }
 @keyframes blink { 50% { opacity: .3; } }
 
+/* --- library: toolbar, metadata, multi-select --- */
+.libbar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 16px; }
+.lib-search { flex: 1; min-width: 220px; }
+.lib-select { width: auto; min-width: 148px; padding: 11px 14px; cursor: pointer; margin: 0; }
+.libbar .btn-sm { flex: none; }
+.doc-meta { color: var(--faint); font: 500 12px "JetBrains Mono", monospace; flex: none; white-space: nowrap; margin-left: auto; }
+.lib-list .doc-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.lib-list .lib-check { width: 17px; height: 17px; accent-color: var(--ember); cursor: pointer; flex: none; display: none; margin: 0; }
+.lib-list.selecting .lib-check { display: inline-block; }
+.lib-list.selecting li { transform: none; }
+.lib-list li.sel { border-color: rgba(242,166,90,.55);
+  background: radial-gradient(120% 120% at 0% 0%, rgba(242,166,90,.12), transparent 60%), var(--panel); }
+.lib-empty { color: var(--faint); border: 1px dashed var(--line-strong); border-radius: 14px;
+  padding: 26px; text-align: center; justify-content: center; }
+.lib-actionbar { display: flex; align-items: center; gap: 14px; margin-bottom: 14px; padding: 10px 16px;
+  border: 1px solid var(--line-strong); border-radius: 12px; background: var(--panel);
+  backdrop-filter: blur(10px); animation: rise .3s var(--ease) both; }
+.lib-checkall { display: flex; align-items: center; gap: 8px; cursor: pointer; color: var(--muted);
+  font: 500 13px "Instrument Sans", sans-serif; }
+.lib-checkall input { width: 17px; height: 17px; accent-color: var(--ember); cursor: pointer; margin: 0; }
+.lib-spacer { flex: 1; }
+.btn-danger { color: #fff; background: linear-gradient(120deg, #f0736a, #d84f45); }
+.btn-danger:hover:not(:disabled) { filter: brightness(1.06); transform: translateY(-2px);
+  box-shadow: 0 12px 30px -12px rgba(240,115,106,.7); }
+.btn-danger:disabled { opacity: .4; cursor: not-allowed; }
+.add-hint { color: var(--muted); font-size: 13.5px; margin: 28px 0 0; }
+
 /* --- search --- */
 .searchbar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
 .search-input { position: relative; flex: 1; min-width: 240px; }

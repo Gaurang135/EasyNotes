@@ -19,7 +19,7 @@ function activateTab(btn) {
   slide(tabGlow, btn);
   const v = btn.dataset.view;
   if (v === "search") { loadStats(); loadOverview(); }
-  if (v === "add") loadRecent();
+  if (v === "library") loadLibrary();
   if (v === "data") { loadAllTables(); loadFields(); }
 }
 $$(".tab").forEach((t) => t.addEventListener("click", () => activateTab(t)));
@@ -95,45 +95,127 @@ async function uploadFiles(files) {
       else toast(`Added ${f.name}`, "ok");
     } catch (e) { toast(`${f.name}: ${e}`, "err"); }
   }
-  fileInput.value = ""; loadRecent();
+  fileInput.value = ""; loadLibrary(); loadStats();
 }
 $("#paste-submit").addEventListener("click", async () => {
   const title = $("#paste-title").value.trim(), text = $("#paste-body").value.trim();
   if (!title || !text) return toast("Title and text are both required", "err");
   const r = await fetch("/documents/text", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title, text }) });
-  if (r.ok) { $("#paste-title").value = ""; $("#paste-body").value = ""; toast("Note added", "ok"); loadRecent(); }
+  if (r.ok) { $("#paste-title").value = ""; $("#paste-body").value = ""; toast("Note added", "ok"); loadLibrary(); loadStats(); }
   else toast("Could not add note", "err");
 });
 
-/* ---------- library ---------- */
+/* ---------- library (file management: search / filter / sort / multi-select) ---------- */
 const EXT = { pdf: "pdf", docx: "doc", pptx: "ppt", xlsx: "xls", csv: "csv", md: "md", txt: "txt" };
-let pollTimer = null;
-let recentSig = "";
-async function loadRecent() {
+let libPoll = null;
+const lib = { docs: [], q: "", type: "all", sort: "date-desc", selecting: false, selected: new Set() };
+
+const fmtSize = (n) => !n ? "—" : n < 1024 ? n + " B"
+  : n < 1048576 ? (n / 1024).toFixed(0) + " KB" : (n / 1048576).toFixed(1) + " MB";
+const fmtDate = (iso) => { const d = new Date(iso); return isNaN(d) ? ""
+  : d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }); };
+
+async function loadLibrary() {
   let docs = []; try { docs = await (await fetch("/documents")).json(); } catch { return; }
-  $("#lib-count").textContent = docs.length ? `${docs.length} item${docs.length > 1 ? "s" : ""}` : "";
-  const sig = docs.map((d) => d.id + d.status + (d.error || "")).join("|");
-  if (sig !== recentSig) {                            // only re-render on real change — no flicker on poll
-    recentSig = sig;
-    $("#recent").innerHTML = docs.map((d) => `
-      <li data-doc="${d.id}">
+  lib.docs = docs;
+  for (const id of [...lib.selected]) if (!docs.some((d) => d.id === id)) lib.selected.delete(id);
+  const sel = $("#lib-type"), types = [...new Set(docs.map((d) => d.file_type))].sort();
+  sel.innerHTML = `<option value="all">All types</option>` +
+    types.map((t) => `<option value="${t}">${t.toUpperCase()}</option>`).join("");
+  sel.value = (lib.type === "all" || types.includes(lib.type)) ? lib.type : (lib.type = "all");
+  renderLibrary();
+  const busy = docs.some((d) => d.status === "processing" || d.status === "pending");
+  clearTimeout(libPoll);
+  if (busy && $("#view-library").classList.contains("is-active")) libPoll = setTimeout(loadLibrary, 1600);
+}
+
+function visibleDocs() {
+  let docs = lib.docs.slice();
+  if (lib.type !== "all") docs = docs.filter((d) => d.file_type === lib.type);
+  if (lib.q) { const q = lib.q.toLowerCase(); docs = docs.filter((d) => (d.title || "").toLowerCase().includes(q)); }
+  const cmp = {
+    "date-desc": (a, b) => (b.uploaded_at || "").localeCompare(a.uploaded_at || ""),
+    "date-asc": (a, b) => (a.uploaded_at || "").localeCompare(b.uploaded_at || ""),
+    "name-asc": (a, b) => (a.title || "").localeCompare(b.title || ""),
+    "name-desc": (a, b) => (b.title || "").localeCompare(a.title || ""),
+    "type": (a, b) => (a.file_type || "").localeCompare(b.file_type || "") || (a.title || "").localeCompare(b.title || ""),
+    "size-desc": (a, b) => (b.size || 0) - (a.size || 0),
+  }[lib.sort];
+  return docs.sort(cmp);
+}
+
+function renderLibrary() {
+  const list = $("#lib-list"); if (!list) return;
+  const docs = visibleDocs();
+  list.classList.toggle("selecting", lib.selecting);
+  if (!docs.length) {
+    list.innerHTML = `<li class="lib-empty">${lib.docs.length
+      ? "No files match your filters." : "Nothing yet — add files in the Add tab."}</li>`;
+  } else {
+    list.innerHTML = docs.map((d) => `
+      <li data-doc="${d.id}" class="${lib.selected.has(d.id) ? "sel" : ""}">
+        <input type="checkbox" class="lib-check" data-id="${d.id}" ${lib.selected.has(d.id) ? "checked" : ""} aria-label="Select ${esc(d.title)}">
         <span class="doc-name"><span class="ext">${EXT[d.file_type] || d.file_type}</span>${esc(d.title)}</span>
+        <span class="doc-meta">${d.field_count || 0}f · ${d.table_count || 0}t · ${fmtSize(d.size)} · ${fmtDate(d.uploaded_at)}</span>
         <span class="doc-actions">
           <span class="pill ${d.status}">${d.status}${d.error ? " · " + esc(d.error) : ""}</span>
           <a class="iconbtn" href="/documents/${d.id}/download" title="Download original" download onclick="event.stopPropagation()">↓</a>
           <button class="iconbtn del" data-del="${d.id}" title="Delete" onclick="event.stopPropagation()">✕</button>
-        </span></li>`).join("")
-      || `<li><span style="color:var(--faint)">Nothing yet — drop a file above.</span></li>`;
-    $$("#recent li[data-doc]").forEach((el) => el.addEventListener("click", () => openDetail(el.dataset.doc)));
-    $$("#recent .del").forEach((b) => b.addEventListener("click", async () => {
+        </span></li>`).join("");
+    $$("#lib-list li[data-doc]").forEach((li) => li.addEventListener("click", (e) => {
+      if (e.target.closest(".doc-actions") || e.target.classList.contains("lib-check")) return;
+      const id = +li.dataset.doc;
+      lib.selecting ? toggleSelect(id) : openDetail(id);
+    }));
+    $$("#lib-list .lib-check").forEach((cb) =>
+      cb.addEventListener("change", () => toggleSelect(+cb.dataset.id, cb.checked)));
+    $$("#lib-list .del").forEach((b) => b.addEventListener("click", async () => {
       await fetch(`/documents/${b.dataset.del}`, { method: "DELETE" });
-      recentSig = ""; toast("Deleted", ""); loadRecent(); loadStats();
+      toast("Deleted", ""); loadLibrary(); loadStats();
     }));
   }
-  const busy = docs.some((d) => d.status === "processing" || d.status === "pending");
-  clearTimeout(pollTimer);
-  if (busy) pollTimer = setTimeout(loadRecent, 1600);
+  updateActionbar();
 }
+
+function toggleSelect(id, force) {
+  const on = force === undefined ? !lib.selected.has(id) : force;
+  on ? lib.selected.add(id) : lib.selected.delete(id);
+  const li = $(`#lib-list li[data-doc="${id}"]`);
+  if (li) { li.classList.toggle("sel", on); const cb = li.querySelector(".lib-check"); if (cb) cb.checked = on; }
+  updateActionbar();
+}
+
+function updateActionbar() {
+  $("#lib-actionbar").hidden = !lib.selecting;
+  $("#lib-select-btn").textContent = lib.selecting ? "Done" : "Select";
+  const n = lib.selected.size, vis = visibleDocs();
+  $("#lib-selcount").textContent = `${n} selected`;
+  $("#lib-delete").disabled = n === 0;
+  $("#lib-all").checked = vis.length > 0 && vis.every((d) => lib.selected.has(d.id));
+}
+
+function exitSelect() { lib.selecting = false; lib.selected.clear(); renderLibrary(); }
+
+$("#lib-q").addEventListener("input", (e) => { lib.q = e.target.value.trim(); renderLibrary(); });
+$("#lib-type").addEventListener("change", (e) => { lib.type = e.target.value; renderLibrary(); });
+$("#lib-sort").addEventListener("change", (e) => { lib.sort = e.target.value; renderLibrary(); });
+$("#lib-select-btn").addEventListener("click", () => {
+  lib.selecting = !lib.selecting; if (!lib.selecting) lib.selected.clear(); renderLibrary();
+});
+$("#lib-cancel").addEventListener("click", exitSelect);
+$("#lib-all").addEventListener("change", (e) => {
+  const vis = visibleDocs();
+  vis.forEach((d) => e.target.checked ? lib.selected.add(d.id) : lib.selected.delete(d.id));
+  renderLibrary();
+});
+$("#lib-delete").addEventListener("click", async () => {
+  const ids = [...lib.selected]; if (!ids.length) return;
+  if (!confirm(`Delete ${ids.length} file${ids.length > 1 ? "s" : ""}? This can't be undone.`)) return;
+  await fetch("/documents/bulk-delete", { method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ids }) });
+  toast(`Deleted ${ids.length} file${ids.length > 1 ? "s" : ""}`, "ok");
+  lib.selecting = false; lib.selected.clear(); loadLibrary(); loadStats();
+});
 
 /* ---------- search ---------- */
 $("#search-form").addEventListener("submit", async (ev) => {

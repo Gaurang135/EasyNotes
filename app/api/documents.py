@@ -78,9 +78,25 @@ def paste(body: PasteText, state=Depends(get_state)):
 @router.get("/documents")
 def list_docs(state=Depends(get_state)):
     rows = state.conn.execute(
-        "SELECT id,title,file_type,status,error,uploaded_at FROM documents ORDER BY id DESC").fetchall()
+        "SELECT d.id,d.title,d.file_type,d.status,d.error,d.uploaded_at,d.size,"
+        " (SELECT COUNT(*) FROM fields f WHERE f.document_id=d.id),"
+        " (SELECT COUNT(*) FROM tables t WHERE t.document_id=d.id)"
+        " FROM documents d ORDER BY d.id DESC").fetchall()
     return [{"id": r[0], "title": r[1], "file_type": r[2], "status": r[3],
-             "error": r[4], "uploaded_at": r[5]} for r in rows]
+             "error": r[4], "uploaded_at": r[5], "size": r[6],
+             "field_count": r[7], "table_count": r[8]} for r in rows]
+
+
+class BulkDelete(BaseModel):
+    ids: list[int]
+
+
+@router.post("/documents/bulk-delete")
+def bulk_delete(body: BulkDelete, state=Depends(get_state)):
+    """Delete several documents in one call (Library multi-select)."""
+    for doc_id in body.ids:
+        db.delete_document(state.conn, doc_id)
+    return {"deleted": len(body.ids)}
 
 
 @router.get("/documents/{doc_id}")

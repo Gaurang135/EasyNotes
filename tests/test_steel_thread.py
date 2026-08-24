@@ -32,3 +32,20 @@ def test_paste_text_and_delete(tmp_path):
         assert c.get("/search", params={"q": "revenue"}).json()["results"]
         assert c.delete(f"/documents/{doc_id}").status_code == 204
         assert c.get("/search", params={"q": "revenue"}).json()["results"] == []
+
+
+def test_documents_list_includes_library_metadata(tmp_path):
+    with _client(tmp_path) as c:
+        c.post("/documents/text", json={"title": "Notes", "text": "vendor: Acme total Rs.10"})
+        row = c.get("/documents").json()[0]
+        assert {"size", "field_count", "table_count", "uploaded_at"} <= row.keys()
+        assert row["size"] > 0
+
+
+def test_bulk_delete_removes_all_selected(tmp_path):
+    with _client(tmp_path) as c:
+        ids = [c.post("/documents/text", json={"title": f"n{i}", "text": f"body {i}"}).json()["id"]
+               for i in range(3)]
+        r = c.post("/documents/bulk-delete", json={"ids": ids})
+        assert r.status_code == 200 and r.json()["deleted"] == 3
+        assert c.get("/documents").json() == []

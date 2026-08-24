@@ -21,6 +21,7 @@
     <nav class="tabs" id="tabs">
       <span class="tab-glow" id="tab-glow" aria-hidden="true"></span>
       <button class="tab is-active" data-view="search">Search</button>
+      <button class="tab" data-view="library">Library</button>
       <button class="tab" data-view="data">Data</button>
       <button class="tab" data-view="add">Add</button>
     </nav>
@@ -46,6 +47,34 @@
         <button class="btn btn-primary" id="search-btn">Search</button>
       </form>
       <div id="results" class="results"><p class="empty">Search across everything you've added — or open <b>Data</b> for precise, spreadsheet-style filtering.</p></div>
+    </section>
+
+    <!-- LIBRARY (file management) -->
+    <section id="view-library" class="view">
+      <div class="libbar">
+        <div class="search-input lib-search">
+          <span class="search-icon" aria-hidden="true">⌕</span>
+          <input id="lib-q" placeholder="Search by file name…" autocomplete="off">
+        </div>
+        <select id="lib-type" class="field lib-select" aria-label="Filter by file type"></select>
+        <select id="lib-sort" class="field lib-select" aria-label="Sort">
+          <option value="date-desc">Newest first</option>
+          <option value="date-asc">Oldest first</option>
+          <option value="name-asc">Name A–Z</option>
+          <option value="name-desc">Name Z–A</option>
+          <option value="type">File type</option>
+          <option value="size-desc">Largest first</option>
+        </select>
+        <button id="lib-select-btn" class="btn btn-ghost btn-sm" type="button">Select</button>
+      </div>
+      <div id="lib-actionbar" class="lib-actionbar" hidden>
+        <label class="lib-checkall"><input type="checkbox" id="lib-all"><span>Select all</span></label>
+        <span id="lib-selcount" class="count">0 selected</span>
+        <span class="lib-spacer"></span>
+        <button id="lib-delete" class="btn btn-danger btn-sm" type="button" disabled>Delete</button>
+        <button id="lib-cancel" class="btn btn-ghost btn-sm" type="button">Cancel</button>
+      </div>
+      <ul id="lib-list" class="recent lib-list"></ul>
     </section>
 
     <!-- DATA (structured / Mode A) -->
@@ -92,8 +121,7 @@
         <textarea id="paste-body" class="field" rows="7" placeholder="Paste or type anything…"></textarea>
         <button id="paste-submit" class="btn btn-primary">Add note</button>
       </div>
-      <div class="section-label"><span>Library</span><span id="lib-count" class="count"></span></div>
-      <ul id="recent" class="recent"></ul>
+      <p class="add-hint">Added files appear in the <b>Library</b> tab, turned into structured, searchable data.</p>
     </section>
   </main>
 
