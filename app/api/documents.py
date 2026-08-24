@@ -72,10 +72,10 @@ _SAMPLES_DIR = Path(__file__).resolve().parent.parent.parent / "samples"
 
 @router.post("/documents/seed")
 def seed(state=Depends(get_state)):
-    """Populate an EMPTY corpus with a small, varied demo set (only when empty, so a
+    """Populate an EMPTY library with a small, varied demo set (only when empty, so a
     fresh clone shows a populated app in one click)."""
     if state.conn.execute("SELECT COUNT(*) FROM documents").fetchone()[0]:
-        raise HTTPException(409, "corpus is not empty — seed only runs on an empty corpus")
+        raise HTTPException(409, "library is not empty — seed only runs on an empty library")
     if not _SAMPLES_DIR.is_dir():
         raise HTTPException(500, "no sample data bundled")
     added = 0

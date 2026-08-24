@@ -22,7 +22,7 @@ _AGG_CUES = [
 
 def detect_aggregate_intent(query: str) -> bool:
     """Count/list-all/distinct questions can't be answered from a retrieval sample —
-    they need the whole corpus. Detect them so /answer switches to structured context."""
+    they need the whole library. Detect them so /answer switches to structured context."""
     q = " " + query.lower() + " "
     return any(c in q for c in _AGG_CUES)
 
@@ -51,7 +51,7 @@ _KIND_SPECIFICITY = {"item": 0, "pair": 1, "email": 2, "url": 3, "phone": 4, "da
 
 def structured_context(conn, query: str = "", max_chars: int = 11000,
                        fields_per_doc: int = 15) -> str:
-    """A per-document inventory of the corpus so the model can compute counts / distinct
+    """A per-document listing of the whole library so the model can compute counts / distinct
     lists / totals over ALL the data (not a retrieval sample) and cite the exact document
     each fact came from. Query-aware: it includes the field(s) of the kind(s) the question
     targets, grouped by document.
@@ -82,7 +82,7 @@ def structured_context(conn, query: str = "", max_chars: int = 11000,
         return sum(1 for spec, _ in by_doc.get(did, []) if spec == 0)
     # item-bearing docs first, then field-richest — so the size cap sheds least-relevant docs
     docs.sort(key=lambda d: (-item_count(d[0]), -len(by_doc.get(d[0], [])), d[2], d[1]))
-    header = (f"CORPUS INVENTORY — {total} documents (the whole corpus). "
+    header = (f"LIBRARY — {total} documents (your complete library). "
               "Format: title [type] :: field=value; …")
     lines, used, omitted = [header], len(header), 0
     for did, title, ft in docs:

@@ -27,7 +27,7 @@ def answer(body: AnswerReq, state=Depends(get_state)):
                     "at a local Ollama. See README."))
     # Aggregate questions ("how many", "list all", "distinct") can't be answered from a
     # top-k retrieval sample — the model would silently miss documents. For these we hand
-    # it the COMPLETE corpus inventory (every doc + every extracted field) so counts and
+    # it the COMPLETE library listing (every doc + every extracted field) so counts and
     # distinct lists are computed over all the data; excerpts still ride along for detail.
     aggregate = detect_aggregate_intent(body.q)
     extra = structured_context(state.conn, body.q) if aggregate else ""

@@ -67,8 +67,17 @@ grouped by area.
   if a reviewer tests it hard — and since it's an OpenAI-compatible endpoint, switching model
   or provider is a one-line env change.
 - **Kept counts and totals out of the model.** Aggregate questions ("how many", "total") are
-  answered from a full-corpus structured summary, and the Insights are computed in code — so
+  answered from a whole-library structured summary, and the Insights are computed in code — so
   the model is used for language, never for arithmetic, where it can quietly slip.
+- **Chose the Ask system prompt by A/B test, not intuition.** I wrote 7 prompt variants and
+  ran all of them against the same seeded library and the same 6 ground-truthed questions
+  through the real model, then had a panel of four different judge models score every answer
+  on accuracy, citation grounding, honest refusals, formatting, and — crucially — whether any
+  internal wording leaked into the reply. The winner combined strict one-item-per-line cited
+  lists with an explicit ban on ever surfacing internal labels to the user. This also fixed a
+  real bug: answers used to echo the injected context and say things like "6 documents in the
+  corpus inventory"; the shipped prompt refers only to "your documents", and I renamed that
+  context block accordingly.
 
 ## UI / UX
 - **Four tabs — Search, Library, Data, Add** — with Search as the landing page that doubles as
@@ -81,7 +90,7 @@ grouped by area.
   doesn't flash on load.
 - **Added one-click sample data.** Since the database isn't committed, a fresh clone opens
   empty, so a "Load sample data" button (shown only when there's nothing yet) populates a demo
-  corpus instantly.
+  library instantly.
 
 ## Deployment & testing
 - **Targeted $0 hosting — Render free tier + Cloudflare R2.** The free disk is ephemeral, so

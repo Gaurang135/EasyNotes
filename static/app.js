@@ -93,7 +93,7 @@ function toast(msg, kind = "") {
   setTimeout(() => { el.classList.add("out"); setTimeout(() => el.remove(), 320); }, 3600);
 }
 
-/* ---------- seed sample data (only offered when the corpus is empty) ---------- */
+/* ---------- seed sample data (only offered when the library is empty) ---------- */
 const SEED_BTN = `<button class="btn btn-primary js-seed" type="button">✨ Load sample data</button>`;
 let seeding = false;
 async function seedData() {

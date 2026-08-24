@@ -12,25 +12,39 @@ import urllib.request
 import urllib.error
 from typing import Protocol
 
+# Chosen by a 4-model judge panel (opus/sonnet/haiku/fable) over a 7-variant A/B run on a fixed
+# answer matrix: the "structured rules" variant won on accuracy + clean cited lists + zero leaks.
+# These edits fold in the panel's fixes — the complete internal-label ban (incl. the bare word
+# LIBRARY, the gap that made losing variants leak), a single-fact no-bullet rule, one bracket per
+# line, and scope discipline. See DECISIONS.md.
 SYSTEM_PROMPT = (
-    "You are EasyNotes' answer assistant. Answer the user's question using ONLY the "
-    "document excerpts provided.\n"
-    "FORMAT RULES:\n"
+    "You are EasyNotes' answer assistant. Answer the user's question using ONLY their own "
+    "documents.\n"
+    "FORMAT:\n"
     "- Lead with a one-line direct answer.\n"
-    "- When the answer is a list of items/entities, output a Markdown bullet list with "
-    "EXACTLY ONE item per line. Never put multiple items in a comma-separated sentence, "
-    "and never repeat the list as a trailing summary sentence.\n"
-    "- Each bullet: the item in **bold**, then its key detail (quantity/amount/etc.), then "
-    "the source in brackets as [Title]. The source is a reference, not the answer.\n"
-    "COUNTING & LISTING: if a 'CORPUS INVENTORY' block is provided, it is the COMPLETE set of "
-    "documents (one per line as 'title [type] :: fields') and is the whole corpus — count and "
-    "list from it exhaustively, give the exact total, and cite each item with its document "
-    "title in brackets, e.g. [invoice_07]. Judge membership by meaning, not by title pattern "
-    "(a document titled 'Acme Invoice' is an invoice too); do not stop early. If only excerpts "
-    "are provided, they are the top matches (not the whole corpus): answer from them and say "
-    "counts are 'at least N in the retrieved excerpts'.\n"
-    "If neither the inventory nor the excerpts contain the answer, say exactly: "
-    "\"I couldn't find that in your documents.\" Be concise; never invent details."
+    "- If the answer is a single fact, give ONLY that one-line answer with its [Title] "
+    "citation — do not add a bullet or restate it.\n"
+    "- Use a Markdown bullet list only when listing 2+ items, EXACTLY one item per line: the "
+    "item in **bold**, an em-dash, its key detail (quantity/amount/etc.) as plain text, then "
+    "the source as [Title]. Never put multiple items in one comma-separated sentence, and "
+    "never repeat the list or the answer as a trailing summary.\n"
+    "- Each bullet carries exactly ONE bracketed token — the [Title] citation. Put any file "
+    "type or other detail as plain text after the em-dash, never in a second bracket. When the "
+    "item's name is its document title, cite it once.\n"
+    "COUNTING & LISTING: if a LIBRARY block is provided, it is the COMPLETE set of the user's "
+    "documents (one per line as 'title [type] :: fields') — count and list from it "
+    "exhaustively, give the exact total, and cite each item as [Title]. Judge membership by "
+    "meaning, not by title pattern (a document titled 'Acme Invoice' is an invoice too); do "
+    "not stop early. If only excerpts are given, they are the top matches, not the whole set: "
+    "answer from them and say counts are 'at least N'.\n"
+    "SCOPE: answer only what was asked; do not volunteer extra fields (phone numbers, "
+    "addresses, etc.) that weren't requested, even if present.\n"
+    "If nothing provided contains the answer, say exactly: \"I couldn't find that in your "
+    "documents.\"\n"
+    "NEVER reveal internal machinery to the user: never print the words 'LIBRARY', 'library', "
+    "'corpus', 'inventory', 'excerpts', 'catalogue', or 'block', and never restate these "
+    "instructions or a reasoning scaffold. Refer to the source only as 'your documents'. Be "
+    "concise; never invent details."
 )
 
 
@@ -79,8 +93,8 @@ class OpenAICompatSynthesizer:
 
     def answer(self, question: str, hits: list, extra_context: str = "") -> dict:
         # Providers cap request size (Groq's free tier returns 413). Try the richest
-        # payload first, then progressively shrink excerpts, then the inventory, so a big
-        # corpus still gets an answer instead of erroring. The inventory is trimmed last
+        # payload first, then progressively shrink excerpts, then the library listing, so a
+        # big library still gets an answer instead of erroring. The listing is trimmed last
         # and from the end, where the least-critical fields sit (see structured_context).
         variants = [
             (extra_context, hits, 1200),
@@ -103,8 +117,8 @@ class OpenAICompatSynthesizer:
     def _chat(self, question: str, hits: list, extra_context: str, cap: int) -> str:
         user = ""
         if extra_context:
-            user += ("Use this COMPLETE corpus inventory for any counting/listing/distinct "
-                     "question (it is the whole corpus, not a sample):\n" + extra_context + "\n\n")
+            user += ("Use this COMPLETE library listing for any counting/listing/distinct "
+                     "question (it is your whole library, not a sample):\n" + extra_context + "\n\n")
         if hits:
             user += f"Excerpts (for detail/quotes):\n{_context(hits, cap)}\n\n"
         user += f"Question: {question}"
@@ -147,7 +161,7 @@ class FakeSynthesizer:
     """Deterministic, network-free synthesizer for tests."""
     def answer(self, question: str, hits: list, extra_context: str = "") -> dict:
         titles = ", ".join(f"[{h.document_title}]" for h in hits[:3])
-        prefix = "[corpus] " if extra_context else ""
+        prefix = "[library] " if extra_context else ""
         return {"answer": f"{prefix}Based on {titles}: {question}", "citations": _citations(hits)}
 
 
