@@ -3,14 +3,16 @@ from pathlib import Path
 from pptx import Presentation
 from app.models import ParsedDoc, TextBlock, Table
 from app.errors import CorruptFileError, NoExtractableTextError
+from app.ingest.ocr import ocr_image, ocr_enabled
 
-_GROUP = 6  # MSO_SHAPE_TYPE.GROUP
+_GROUP = 6    # MSO_SHAPE_TYPE.GROUP
+_PICTURE = 13  # MSO_SHAPE_TYPE.PICTURE
 
 
 def _walk(shapes):
-    """Yield ('prose', text) and ('table', grid) from a shape tree, recursing groups.
-    Tables and grouped shapes hold most of the content in real decks — text frames alone
-    miss them."""
+    """Yield ('prose', text), ('table', grid), ('image', blob) from a shape tree,
+    recursing groups. Tables and grouped shapes hold most of a real deck's content;
+    images (diagrams) carry the rest and need OCR."""
     for sh in shapes:
         try:
             if sh.shape_type == _GROUP:
@@ -20,6 +22,11 @@ def _walk(shapes):
                 grid = [r for r in grid if any(r)]
                 if grid:
                     yield ("table", grid)
+            elif sh.shape_type == _PICTURE and ocr_enabled():
+                try:
+                    yield ("image", sh.image.blob)
+                except Exception:
+                    pass
             elif sh.has_text_frame:
                 t = sh.text_frame.text.strip()
                 if t:
@@ -50,6 +57,11 @@ class PptxParser:
             for kind, payload in _walk(slide.shapes):
                 if kind == "prose":
                     prose.append(payload)
+                elif kind == "image":
+                    text = ocr_image(payload)
+                    if text:
+                        blocks.append(TextBlock(text=text, kind="prose",
+                                                location=f"slide {i} diagram (OCR)", heading=title))
                 else:  # table
                     tnum += 1
                     rows = ["\t".join(r) for r in payload]

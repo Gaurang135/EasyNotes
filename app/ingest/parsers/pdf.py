@@ -4,6 +4,7 @@ from pypdf import PdfReader
 from pypdf.errors import PdfReadError
 from app.models import ParsedDoc, TextBlock
 from app.errors import EncryptedFileError, CorruptFileError, NoExtractableTextError
+from app.ingest.ocr import ocr_image, ocr_enabled
 
 
 class PdfParser:
@@ -24,6 +25,16 @@ class PdfParser:
                     warnings.append(f"page {i+1}: extraction failed"); continue
                 if text:
                     blocks.append(TextBlock(text=text, kind="prose", location=f"page {i+1}"))
+                elif ocr_enabled():
+                    # scanned/image page — OCR its images
+                    try:
+                        for img in page.images:
+                            t = ocr_image(img.data)
+                            if t:
+                                blocks.append(TextBlock(text=t, kind="prose",
+                                                        location=f"page {i+1} (OCR)"))
+                    except Exception:
+                        warnings.append(f"page {i+1}: OCR failed")
             if not blocks:
                 raise NoExtractableTextError("no extractable text (needs OCR)")
             return ParsedDoc(text_blocks=blocks, metadata={}, warnings=warnings)
