@@ -109,3 +109,13 @@ def test_insights_computes_exact_spend_analytics(tmp_path):
         names = {v["name"] for v in d["by_vendor"]}
         assert {"Acme", "Globex"} <= names
         assert d["date_range"]["min"] == "2026-01-10"
+
+
+def test_seed_populates_empty_corpus_then_refuses(tmp_path):
+    with _client(tmp_path) as c:
+        assert c.get("/documents").json() == []
+        r = c.post("/documents/seed")
+        assert r.status_code == 200 and r.json()["added"] >= 4   # bundled samples ingested
+        assert len(c.get("/documents").json()) >= 4
+        # seed only runs on an empty corpus
+        assert c.post("/documents/seed").status_code == 409

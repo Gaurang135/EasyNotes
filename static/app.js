@@ -68,6 +68,29 @@ function toast(msg, kind = "") {
   setTimeout(() => { el.classList.add("out"); setTimeout(() => el.remove(), 320); }, 3600);
 }
 
+/* ---------- seed sample data (only offered when the corpus is empty) ---------- */
+const SEED_BTN = `<button class="btn btn-primary js-seed" type="button">✨ Load sample data</button>`;
+let seeding = false;
+async function seedData() {
+  if (seeding) return;
+  seeding = true;
+  toast("Loading sample data…", "");
+  try {
+    const r = await fetch("/documents/seed", { method: "POST" });
+    if (!r.ok) { toast("Could not load sample data", "err"); seeding = false; return; }
+    toast("Sample data added", "ok");
+  } catch { toast("Could not load sample data", "err"); seeding = false; return; }
+  const refresh = () => {
+    loadStats();
+    const v = $(".tab.is-active") && $(".tab.is-active").dataset.view;
+    if (v === "search") loadOverview();
+    else if (v === "library") loadLibrary();
+    else if (v === "data") loadData();
+  };
+  refresh(); setTimeout(refresh, 1300); setTimeout(() => { refresh(); seeding = false; }, 3200);
+}
+document.addEventListener("click", (e) => { if (e.target.closest(".js-seed")) seedData(); });
+
 /* ---------- dashboard stats ---------- */
 async function loadStats() {
   let s; try { s = await (await fetch("/stats")).json(); } catch { return; }
@@ -158,8 +181,9 @@ function renderLibrary() {
   const docs = visibleDocs();
   list.classList.toggle("selecting", lib.selecting);
   if (!docs.length) {
-    list.innerHTML = `<li class="lib-empty">${lib.docs.length
-      ? "No files match your filters." : "Nothing yet — add files in the Add tab."}</li>`;
+    list.innerHTML = lib.docs.length
+      ? `<li class="lib-empty">No files match your filters.</li>`
+      : `<li class="lib-empty">Nothing yet — add files in the Add tab.<div class="empty-or">or try it instantly</div>${SEED_BTN}</li>`;
   } else {
     list.innerHTML = docs.map((d) => `
       <li data-doc="${d.id}" class="${lib.selected.has(d.id) ? "sel" : ""}">
@@ -405,7 +429,9 @@ async function loadOverview() {
   const box = $("#results");
   const ready = docs.filter((d) => d.status === "ready");
   if (!ready.length) {
-    box.innerHTML = `<p class="empty">Add documents (Add tab) — each one is turned into structured fields & tables you can query here.</p>`;
+    box.innerHTML = `<div class="empty-cta">
+      <p class="empty">No documents yet — add files in the <b>Add</b> tab to turn them into structured, searchable data.</p>
+      <div class="empty-or">or try it instantly</div>${SEED_BTN}</div>`;
     return;
   }
   box.innerHTML = `<div class="overview-h">Your library — extracted into structured data</div>` +
@@ -519,7 +545,10 @@ function renderDataEmpty() {
       </div>
       <h3>Turn messy files into structured data.</h3>
       <p>Add a document and this tab fills with the dates, amounts, contacts, key facts, and tables we pull out — all filterable and searchable.</p>
-      <button class="btn btn-primary" id="de-cta" type="button">Add your first document</button>
+      <div class="de-actions">
+        <button class="btn btn-primary" id="de-cta" type="button">Add your first document</button>
+        <button class="btn btn-ghost js-seed" type="button">✨ Load sample data</button>
+      </div>
     </div>`;
   const cta = $("#de-cta");
   if (cta) cta.addEventListener("click", () => { const a = $$(".tab").find((t) => t.dataset.view === "add"); if (a) activateTab(a); });

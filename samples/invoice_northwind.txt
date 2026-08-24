@@ -1,0 +1,11 @@
+INVOICE #INV-3001
+Vendor: Northwind Traders
+Bill to: Client 12
+Invoice date: 2026-05-04
+Due date: 2026-06-03
+Line items: Widget x4 Rs.1200.00 Sprocket x2 Rs.800.00 Cable x10 Rs.150.00
+Subtotal Rs.2150.00
+Tax Rs.387.00
+Total Rs.2537.00
+Contact: ap@northwind.example | +91 90000 11111
+https://northwind.example/pay

@@ -32,18 +32,18 @@ def _create_row(state, filename, title, file_type, size, chash) -> int:
     return cur.lastrowid
 
 
-@router.post("/documents", status_code=201)
-def upload(file: UploadFile = File(...), state=Depends(get_state)):
+def _ingest_bytes(state, filename: str, data: bytes) -> dict:
+    """Validate, dedupe, persist and enqueue one file. Shared by upload and seed."""
     originals = Path(state.settings.data_dir) / "originals"
     originals.mkdir(parents=True, exist_ok=True)
-    tmp = originals / f"_tmp_{file.filename}"
-    tmp.write_bytes(file.file.read())
+    tmp = originals / f"_tmp_{filename}"
+    tmp.write_bytes(data)
     try:
         validation.check_size(tmp, state.settings.max_upload_mb)
     except CorruptFileError as e:
         tmp.unlink(missing_ok=True)
         raise HTTPException(413, str(e))
-    ftype = validation.sniff_type(tmp, file.filename or "")
+    ftype = validation.sniff_type(tmp, filename)
     if ftype not in state.parsers:
         tmp.unlink(missing_ok=True)
         raise HTTPException(415, f"unsupported file type: {ftype}")
@@ -52,11 +52,38 @@ def upload(file: UploadFile = File(...), state=Depends(get_state)):
     if existing:
         tmp.unlink(missing_ok=True)
         return {"id": existing[0], "status": "duplicate"}
-    title = (file.filename or "untitled").rsplit(".", 1)[0]
-    doc_id = _create_row(state, file.filename, title, ftype, tmp.stat().st_size, chash)
-    tmp.rename(originals / f"{doc_id}_{file.filename}")
+    title = filename.rsplit(".", 1)[0]
+    doc_id = _create_row(state, filename, title, ftype, tmp.stat().st_size, chash)
+    tmp.rename(originals / f"{doc_id}_{filename}")
     state.ingest.enqueue(doc_id)
     return {"id": doc_id, "status": "pending"}
+
+
+@router.post("/documents", status_code=201)
+def upload(file: UploadFile = File(...), state=Depends(get_state)):
+    return _ingest_bytes(state, file.filename or "untitled", file.file.read())
+
+
+_SAMPLES_DIR = Path(__file__).resolve().parent.parent.parent / "samples"
+
+
+@router.post("/documents/seed")
+def seed(state=Depends(get_state)):
+    """Populate an EMPTY corpus with a small, varied demo set (only when empty, so a
+    fresh clone shows a populated app in one click)."""
+    if state.conn.execute("SELECT COUNT(*) FROM documents").fetchone()[0]:
+        raise HTTPException(409, "corpus is not empty — seed only runs on an empty corpus")
+    if not _SAMPLES_DIR.is_dir():
+        raise HTTPException(500, "no sample data bundled")
+    added = 0
+    for p in sorted(_SAMPLES_DIR.iterdir()):
+        if p.is_file() and not p.name.startswith("."):
+            try:
+                if _ingest_bytes(state, p.name, p.read_bytes())["status"] != "duplicate":
+                    added += 1
+            except HTTPException:
+                continue
+    return {"added": added}
 
 
 @router.post("/documents/text", status_code=201)

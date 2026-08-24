@@ -1,0 +1,10 @@
+INVOICE #INV-3002
+Vendor: Globex Corporation
+Bill to: Client 7
+Invoice date: 2026-05-18
+Due date: 2026-06-17
+Line items: Module x3 Rs.2100.00 Sensor x6 Rs.540.00
+Subtotal Rs.2640.00
+Tax Rs.475.20
+Total Rs.3115.20
+Contact: billing@globex.example | +91 90000 22222

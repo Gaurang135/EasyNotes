@@ -1,0 +1,5 @@
+region,product,units,revenue,date
+North,Widget,120,144000,2026-01-08
+South,Sprocket,80,64000,2026-02-11
+East,Module,45,94500,2026-03-02
+West,Sensor,210,113400,2026-03-19

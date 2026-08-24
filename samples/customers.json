@@ -1,0 +1,5 @@
+[
+  {"name": "Ada Lovelace", "email": "ada@example.com", "plan": "pro", "city": "London"},
+  {"name": "Alan Turing", "email": "alan@example.com", "plan": "enterprise", "city": "Manchester"},
+  {"name": "Grace Hopper", "email": "grace@example.com", "plan": "free", "city": "New York"}
+]

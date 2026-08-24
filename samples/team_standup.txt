@@ -1,0 +1,6 @@
+Team Standup — 2026-04-22
+Attendees: Ravi, Mia, Sam
+Decision: ship v2 by 2026-05-21.
+Action item: Mia to finalise the pricing sheet.
+Owner: Sam
+Contact: pm@example.com

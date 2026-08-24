@@ -233,6 +233,12 @@ textarea.field { resize: vertical; line-height: 1.6; }
 .de-clean { flex: 1; display: flex; flex-wrap: wrap; gap: 6px; align-content: flex-start; }
 .de-card h3 { margin: 0 0 8px; font: 600 20px "Fraunces", Georgia, serif; color: var(--text); }
 .de-card p { margin: 0 0 20px; color: var(--muted); font-size: 14px; line-height: 1.6; }
+.de-actions { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
+/* seed CTA shown only in empty states */
+.empty-cta { display: flex; flex-direction: column; align-items: center; gap: 12px; text-align: center; padding: 32px 16px; }
+.empty-or { color: var(--faint); font: 500 11px "JetBrains Mono", monospace; text-transform: uppercase; letter-spacing: .12em; }
+.lib-empty .empty-or { margin: 12px 0 10px; }
+.lib-empty .btn { margin-top: 2px; }
 
 /* --- search --- */
 .searchbar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
