@@ -51,16 +51,27 @@ def _target_kinds(query: str) -> set[str]:
     return kinds
 
 
-def structured_context(conn, query: str = "") -> str:
-    """A COMPLETE, per-document inventory of the corpus so the model can compute counts /
-    distinct lists / totals over ALL the data (not a retrieval sample) and cite the exact
-    document each fact came from. It is query-aware: the full document list is always
-    included (for counting/'list all documents'), plus every field of the kind(s) the
-    question targets, grouped by document and left UNCAPPED so nothing needed is dropped.
-    Restricting to the relevant kinds is what keeps the payload small while staying exact."""
+# field kinds, most→least specific: items/entities answer most listing questions; the
+# long amount/date runs are bulkier and, within a document, least likely to be the target
+_KIND_SPECIFICITY = {"item": 0, "pair": 1, "email": 2, "url": 3, "phone": 4, "date": 5, "amount": 6}
+
+
+def structured_context(conn, query: str = "", max_chars: int = 11000,
+                       fields_per_doc: int = 15) -> str:
+    """A per-document inventory of the corpus so the model can compute counts / distinct
+    lists / totals over ALL the data (not a retrieval sample) and cite the exact document
+    each fact came from. Query-aware: it includes the field(s) of the kind(s) the question
+    targets, grouped by document.
+
+    Two guards keep it inside a provider's request limit without ever dropping the answer:
+    each document is capped at fields_per_doc fields (most-specific kinds first, so one
+    field-heavy document — e.g. meeting notes with 200 pairs — can't crowd everything out),
+    and documents are ordered by how relevant they are (item-bearing first, then by field
+    count) before the whole thing is capped at max_chars. The header always states the true
+    total so counting stays exact even if some low-relevance documents are omitted."""
     docs = conn.execute(
-        "SELECT id, title, file_type FROM documents WHERE status='ready' ORDER BY file_type, title"
-    ).fetchall()
+        "SELECT id, title, file_type FROM documents WHERE status='ready'").fetchall()
+    total = len(docs)
     kinds = _target_kinds(query)
     by_doc: dict = {}
     if kinds:
@@ -68,16 +79,29 @@ def structured_context(conn, query: str = "") -> str:
         for did, key, value, kind in conn.execute(
                 f"SELECT document_id, key, value, kind FROM fields WHERE kind IN ({qs})",
                 tuple(kinds)):
-            by_doc.setdefault(did, []).append(
-                f"{key}={value}" if kind in ("pair", "item") else f"{kind}={value}")
-    lines = [f"CORPUS INVENTORY — {len(docs)} documents (the whole corpus). "
-             "Format: title [type] :: field=value; …"]
+            disp = f"{key}={value}" if kind in ("pair", "item") else f"{kind}={value}"
+            by_doc.setdefault(did, []).append((_KIND_SPECIFICITY.get(kind, 9), disp))
+    for did, fields in by_doc.items():
+        fields.sort(key=lambda kv: kv[0])           # most-specific kinds survive the per-doc cap
+        del fields[fields_per_doc:]
+
+    def item_count(did):
+        return sum(1 for spec, _ in by_doc.get(did, []) if spec == 0)
+    # item-bearing docs first, then field-richest — so the size cap sheds least-relevant docs
+    docs.sort(key=lambda d: (-item_count(d[0]), -len(by_doc.get(d[0], [])), d[2], d[1]))
+    header = (f"CORPUS INVENTORY — {total} documents (the whole corpus). "
+              "Format: title [type] :: field=value; …")
+    lines, used, omitted = [header], len(header), 0
     for did, title, ft in docs:
-        line = f"- {title} [{ft}]"
-        parts = by_doc.get(did)
-        if parts:
-            line += " :: " + "; ".join(parts)
+        fields = by_doc.get(did)
+        line = f"- {title} [{ft}]" + (" :: " + "; ".join(d for _, d in fields) if fields else "")
+        if used + len(line) + 1 > max_chars:
+            omitted += 1
+            continue
         lines.append(line)
+        used += len(line) + 1
+    if omitted:
+        lines.append(f"(+{omitted} more document(s) omitted to fit the size limit)")
     return "\n".join(lines)
 
 
