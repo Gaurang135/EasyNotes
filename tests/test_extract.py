@@ -45,6 +45,32 @@ def test_deduplicates():
     assert len(emails) == 1
 
 
+def test_pair_ignores_diagram_and_code_lines():
+    # Mermaid arrows / code must NOT become key:value pairs (the reported accuracy bug:
+    # the hyphen separator turned "A --> B" into key="A ", value="> B")
+    text = ("BR -|> RC & RP & RO\n"
+            "APR -|\"Revise\" --> BR\n"
+            "RC --> DB\n"
+            "A -- yes --> B\n"
+            "x := y\n"
+            "return total - 1")
+    assert [f for f in extract_fields(text) if f.kind == "pair"] == []
+
+
+def test_pair_rejects_noise_values():
+    # a colon line whose value is punctuation/arrows carries no real fact
+    text = "Arrow: -->\nJunk: |{}[]\nEmpty: &&&"
+    assert [f for f in extract_fields(text) if f.kind == "pair"] == []
+
+
+def test_pair_still_extracts_real_colon_pairs():
+    text = "Vendor: Acme Corp\nStatus: Paid\nInvoice No: INV-2032"
+    pairs = {f.key: f.value for f in extract_fields(text) if f.kind == "pair"}
+    assert pairs.get("Vendor") == "Acme Corp"
+    assert pairs.get("Status") == "Paid"
+    assert pairs.get("Invoice No") == "INV-2032"      # hyphen inside a value is fine
+
+
 def test_empty_text_is_safe():
     assert extract_fields("") == []
 

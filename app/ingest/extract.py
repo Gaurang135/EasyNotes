@@ -27,8 +27,24 @@ _COMPILED = [(r["kind"], re.compile(r["pattern"])) for r in RULES]
 _AMOUNT = r"(?:₹|\$|€|£|Rs\.?|INR|USD|EUR)\s?\d[\d,]*(?:\.\d{1,2})?"
 _LINE_ITEM = re.compile(rf"([A-Za-z][A-Za-z0-9 \-]*?)\s+[x×](\d+)\s+({_AMOUNT})")
 
-# "Key: value" pairs on a single line (label of 1-40 chars, letters/spaces/-/_)
-_PAIR = re.compile(r"^[ \t]*([A-Za-z][\w \-/]{1,39})[ \t]*[:\-][ \t]*(.+?)[ \t]*$", re.MULTILINE)
+# "Key: value" pairs on a single line (label of 1-40 chars). Separator is a SINGLE colon
+# only — never a hyphen — because hyphens are ubiquitous in prose, code and diagrams
+# ("A --> B", "User-Agent", "total - 1"), which is what previously flooded the field set
+# with junk. "::" / ":=" (namespaces, assignment) are excluded via the negative lookahead.
+_PAIR = re.compile(r"^[ \t]*([A-Za-z][\w \-/]{1,39})[ \t]*:(?![:=])[ \t]*(.+?)[ \t]*$", re.MULTILINE)
+
+# Tokens that mark a "pair" as really code/diagram/markup, not a human key:value fact.
+_NOT_A_FACT = re.compile(r"[|<>{}\[\]`]|-->|-\|>|-\.->|==>|->|::|:=|&&")
+
+
+def _looks_like_pair(key: str, value: str) -> bool:
+    """Reject key:value 'facts' that are actually code, diagram edges or punctuation noise."""
+    if _NOT_A_FACT.search(key) or _NOT_A_FACT.search(value):
+        return False
+    if not re.search(r"[A-Za-z0-9]", value):            # a real value has an alphanumeric run
+        return False
+    keep = sum(c.isalnum() or c.isspace() for c in value)
+    return keep / len(value) >= 0.4                      # not mostly punctuation
 
 _DATE_RE = re.compile(RULES[3]["pattern"])
 _NUM_RE = re.compile(r"^[+-]?[\d,]*\.?\d+%?$")
@@ -73,6 +89,9 @@ def extract_fields(text: str, limit: int = 200) -> list[Field]:
             continue
         # skip a pair whose value is already a typed field (e.g. "Date: 2026-03-20")
         if val.strip().lower() in typed_values:
+            continue
+        # skip code/diagram/punctuation noise masquerading as a fact
+        if not _looks_like_pair(k, val.strip()):
             continue
         if len(val) <= 120:
             add(k, val, "pair")
