@@ -149,7 +149,7 @@ OpenAI-compatible endpoint — no code change:
 # Groq free tier (fast, free — great for a demo)
 export ANSWER_BASE_URL=https://api.groq.com/openai/v1
 export ANSWER_API_KEY=gsk_your_key
-export ANSWER_MODEL=llama-3.3-70b-versatile
+export ANSWER_MODEL=openai/gpt-oss-120b
 make run
 
 # …or fully local / offline via Ollama (no key)

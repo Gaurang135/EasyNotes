@@ -58,7 +58,10 @@ class OpenAICompatSynthesizer:
                 {"role": "user", "content": f"Excerpts:\n{_context(hits)}\n\nQuestion: {question}"},
             ],
         }
-        headers = {"Content-Type": "application/json"}
+        # A real User-Agent is required: some providers front their API with Cloudflare,
+        # which 403-blocks the default "Python-urllib" agent as a bot.
+        headers = {"Content-Type": "application/json", "Accept": "application/json",
+                   "User-Agent": "EasyNotes/1.0"}
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
         req = urllib.request.Request(self.url, data=json.dumps(payload).encode(), headers=headers)

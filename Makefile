@@ -18,7 +18,8 @@ $(VENV)/.installed: requirements.txt requirements-dev.txt
 setup: $(VENV)/.installed ## Create venv and install dependencies
 
 .PHONY: run
-run: setup ## Run EasyNotes locally on http://localhost:$(PORT)
+run: setup ## Run EasyNotes locally on http://localhost:$(PORT) (loads .env if present)
+	set -a; [ -f .env ] && . ./.env; set +a; \
 	DATA_DIR=$(DATA_DIR) SNAPSHOT_BACKEND=none \
 	$(BIN)/uvicorn app.main:app --reload --port $(PORT)
 
@@ -43,6 +44,7 @@ docker-run: docker-build ## Build the image AND run the container locally on :$(
 	docker rm -f easynotes 2>/dev/null || true
 	docker run -d --name easynotes -p $(PORT):8000 \
 	  -e SNAPSHOT_BACKEND=none \
+	  $$([ -f .env ] && echo --env-file .env) \
 	  -v easynotes_data:/data \
 	  $(IMAGE)
 	@echo "EasyNotes running at http://localhost:$(PORT)  (logs: docker logs -f easynotes)"

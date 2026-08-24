@@ -10,3 +10,6 @@ models/
 
 # local-only helper, never commit
 push_all.sh
+
+# secrets — never commit
+.env
