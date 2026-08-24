@@ -60,9 +60,7 @@ window.addEventListener("load", positionGlows);
 window.addEventListener("resize", positionGlows);
 setTimeout(positionGlows, 300);
 
-/* ---------- light / dark theme (default: follow the OS) ---------- */
-const SUN = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4.2"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M19.1 4.9l-1.4 1.4M6.3 17.7l-1.4 1.4"/></svg>`;
-const MOON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.2 6.2 0 0 0 10.5 10.5z"/></svg>`;
+/* ---------- light / dark theme toggle switch (default: follow the OS) ---------- */
 const mqLight = window.matchMedia("(prefers-color-scheme: light)");
 function effectiveTheme() {
   return document.documentElement.getAttribute("data-theme") || (mqLight.matches ? "light" : "dark");
@@ -70,7 +68,9 @@ function effectiveTheme() {
 function renderThemeIcon() {
   const btn = $("#theme-toggle"); if (!btn) return;
   const eff = effectiveTheme();
-  btn.innerHTML = eff === "light" ? SUN : MOON;   // shows the theme currently in effect
+  btn.classList.toggle("is-dark", eff === "dark");   // slides the knob + tints the active icon
+  btn.classList.toggle("is-light", eff === "light");
+  btn.setAttribute("aria-checked", String(eff === "dark"));
   const forced = document.documentElement.getAttribute("data-theme");
   btn.title = `Theme: ${forced || "system"} — switch to ${eff === "light" ? "dark" : "light"}`;
 }
@@ -446,6 +446,9 @@ async function renderMiniTable(tid) {
 }
 $("#detail-close").addEventListener("click", () => { $("#detail").hidden = true; });
 $("#detail").addEventListener("click", (e) => { if (e.target.id === "detail") $("#detail").hidden = true; });
+document.addEventListener("keydown", (e) => {   // Esc closes the open document view
+  if (e.key === "Escape" && !$("#detail").hidden) $("#detail").hidden = true;
+});
 
 /* ---------- landing overview: messy docs -> structured data, made visible ---------- */
 async function loadOverview() {
