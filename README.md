@@ -146,20 +146,26 @@ It's **off by default** (returns `501` with instructions). Enable it with any
 OpenAI-compatible endpoint — no code change:
 
 ```bash
-# Groq free tier (fast, free — great for a demo)
+# Google Gemini free tier (recommended — generous free tier, good quality)
+export ANSWER_BASE_URL=https://generativelanguage.googleapis.com/v1beta/openai
+export ANSWER_API_KEY=your_ai_studio_key   # aistudio.google.com/apikey
+export ANSWER_MODEL=gemini-3.6-flash       # confirm the current flash id in AI Studio
+make run
+
+# …or Groq free tier
 export ANSWER_BASE_URL=https://api.groq.com/openai/v1
 export ANSWER_API_KEY=gsk_your_key
 export ANSWER_MODEL=openai/gpt-oss-120b
-make run
 
-# …or fully local / offline via Ollama (no key)
+# …or fully local / offline via Ollama (no key, no rate limits)
 export ANSWER_BASE_URL=http://localhost:11434/v1
 export ANSWER_MODEL=llama3.2
 ```
 
-Also works with OpenAI (`ANSWER_BASE_URL=https://api.openai.com/v1`, `ANSWER_MODEL=gpt-4o-mini`).
-Answers are grounded strictly in retrieved excerpts; the retrieval path is unchanged, so
-turning Ask on/off never affects search or the structured Data views. See `DECISIONS.md`.
+Also works with OpenAI (`ANSWER_BASE_URL=https://api.openai.com/v1`, `ANSWER_MODEL=gpt-5.6-luna`).
+Put keys in a git-ignored `.env` (never commit them). Answers are grounded strictly in
+retrieved excerpts; the retrieval path is unchanged, so turning Ask on/off never affects
+search or the structured Data views. See `DECISIONS.md`.
 
 ## Development
 
