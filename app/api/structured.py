@@ -48,6 +48,8 @@ def stats(state=Depends(get_state)):
         "tables": c.execute("SELECT count(*) FROM tables").fetchone()[0],
         "fields": c.execute("SELECT count(*) FROM fields").fetchone()[0],
         "by_type": by_type,
+        "field_kinds": {r[0]: r[1] for r in c.execute(
+            "SELECT kind, COUNT(*) FROM fields GROUP BY kind")},
         # lets the UI default the landing to Ask only when a generation model is configured
         "ask_enabled": getattr(state, "answer_synth", None) is not None,
     }
@@ -146,20 +148,27 @@ def insights(state=Depends(get_state)):
     }
 
 
+# high-signal kinds first so a Record card leads with the meaningful fields, pairs last
+_KIND_PRIORITY = {"amount": 0, "date": 1, "email": 2, "phone": 3, "url": 4, "item": 5, "pair": 6}
+
+
 @router.get("/overview")
 def overview(state=Depends(get_state)):
-    """Per-document structured summary for the landing dashboard: what each messy
-    document was turned into (fields + tables)."""
+    """Per-document structured summary: what each messy document was turned into.
+    Powers the Search landing and the Data tab's Records lens — curated fields (typed
+    kinds first) plus a summary of every table extracted from the document."""
     c = state.conn
     out = []
     for did, title, ftype, status, err in c.execute(
             "SELECT id,title,file_type,status,error FROM documents ORDER BY id DESC"):
-        fields = [{"key": r[0], "value": r[1], "kind": r[2]} for r in c.execute(
-            "SELECT key,value,kind FROM fields WHERE document_id=? LIMIT 6", (did,))]
-        fcount = c.execute("SELECT count(*) FROM fields WHERE document_id=?", (did,)).fetchone()[0]
-        tcount = c.execute("SELECT count(*) FROM tables WHERE document_id=?", (did,)).fetchone()[0]
+        rows = c.execute("SELECT key,value,kind FROM fields WHERE document_id=?", (did,)).fetchall()
+        rows.sort(key=lambda r: _KIND_PRIORITY.get(r[2], 9))
+        fields = [{"key": k, "value": v, "kind": kd} for k, v, kd in rows[:10]]
+        tables = [{"id": r[0], "name": r[1], "row_count": r[2]} for r in c.execute(
+            "SELECT id,name,row_count FROM tables WHERE document_id=? ORDER BY id", (did,))]
         out.append({"id": did, "title": title, "file_type": ftype, "status": status, "error": err,
-                    "fields": fields, "field_count": fcount, "table_count": tcount})
+                    "fields": fields, "field_count": len(rows),
+                    "table_count": len(tables), "tables": tables})
     return out
 
 

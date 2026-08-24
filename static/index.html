@@ -77,31 +77,44 @@
       <ul id="lib-list" class="recent lib-list"></ul>
     </section>
 
-    <!-- DATA (structured / Mode A) -->
+    <!-- DATA (structured, queryable — the "messy → structured" payoff) -->
     <section id="view-data" class="view">
-      <div class="segmented" id="data-modes">
-        <span class="seg-glow" id="dseg-glow" aria-hidden="true"></span>
-        <button class="seg is-active" data-dmode="insights">Insights</button>
-        <button class="seg" data-dmode="tables">Tables</button>
-        <button class="seg" data-dmode="fields">Fields</button>
+      <div class="data-head">
+        <h2 class="data-title">Structured data</h2>
+        <p class="data-sub">Every file you added, turned into clean fields and tables — filter, sort, and search them here.</p>
+        <p id="data-live" class="data-live"></p>
       </div>
 
-      <div id="pane-insights" class="pane is-active">
-        <div id="insights-body"><p class="empty">Add documents to see insights.</p></div>
-      </div>
+      <div id="data-empty" class="data-empty" hidden></div>
 
-      <div id="pane-tables" class="pane">
-        <div class="tablebar">
-          <input id="table-filter" class="field" placeholder="Filter rows across all tables…">
+      <div id="data-main" hidden>
+        <div class="data-query">
+          <div class="search-input">
+            <span class="search-icon" aria-hidden="true">⌕</span>
+            <input id="data-q" placeholder="Search extracted data — a vendor, an amount, an email, a column value…" autocomplete="off">
+          </div>
+          <div class="chips" id="data-facets"></div>
         </div>
-        <div id="tables-all"><p class="empty">No tables yet — add a CSV, spreadsheet, or a doc with tables.</p></div>
-      </div>
 
-      <div id="pane-fields" class="pane">
-        <p class="hint">Every value extracted across all your documents — one queryable dataset.</p>
-        <div class="chips" id="field-kinds"></div>
-        <input id="field-filter" class="field" placeholder="Search fields by value or key…">
-        <div class="tablewrap"><table class="grid" id="fields-grid"></table></div>
+        <div class="segmented" id="data-modes">
+          <span class="seg-glow" id="dseg-glow" aria-hidden="true"></span>
+          <button class="seg is-active" data-dmode="records">Records</button>
+          <button class="seg" data-dmode="tables">Tables</button>
+          <button class="seg" data-dmode="fields">Fields</button>
+        </div>
+
+        <div id="pane-records" class="pane is-active">
+          <div id="records-body"></div>
+        </div>
+
+        <div id="pane-tables" class="pane">
+          <div id="tables-all"><p class="empty">No tables yet — add a CSV, spreadsheet, JSON, or a doc with tables.</p></div>
+        </div>
+
+        <div id="pane-fields" class="pane">
+          <p class="hint">Every fact extracted across all your documents — one queryable dataset.</p>
+          <div class="tablewrap"><table class="grid" id="fields-grid"></table></div>
+        </div>
       </div>
     </section>
 

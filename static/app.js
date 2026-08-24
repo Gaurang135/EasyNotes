@@ -20,7 +20,7 @@ function activateTab(btn) {
   const v = btn.dataset.view;
   if (v === "search") { loadStats(); loadOverview(); }
   if (v === "library") loadLibrary();
-  if (v === "data") { loadInsights(); loadAllTables(); loadFields(); }
+  if (v === "data") loadData();
 }
 $$(".tab").forEach((t) => t.addEventListener("click", () => activateTab(t)));
 
@@ -423,77 +423,119 @@ async function loadOverview() {
   $$("#results .ocard").forEach((el) => el.addEventListener("click", () => openDetail(el.dataset.doc)));
 }
 
-/* ---------- data: insights (exact, AI-free analytics from extracted fields) ---------- */
-const iCard = (title, body) => `<div class="i-card"><h4>${title}</h4>${body}</div>`;
-const iBar = (label, frac, val) =>
-  `<div class="i-bar"><span class="i-bl" title="${label}">${label}</span>` +
-  `<span class="i-track"><span class="i-fill" style="width:${Math.max(3, Math.round(frac * 100))}%"></span></span>` +
-  `<span class="i-bv">${val}</span></div>`;
+/* ---------- data tab: "your documents, turned into structured data" ----------
+   Self-explanatory (header + live counts), records-first (per-document extracted
+   structure), and queryable (one search bar + kind facets driving all three lenses).
+   No BI/spend dashboard — this tab showcases STRUCTURED, QUERYABLE data. */
+const KIND_LABEL = { amount: "Amounts", date: "Dates", email: "Emails", phone: "Phones",
+                     url: "Links", item: "Line items", pair: "Key facts" };
+const KIND_ORDER = ["amount", "date", "email", "phone", "url", "item", "pair"];
+const clip = (s, n) => { s = String(s); return s.length > n ? s.slice(0, n) + "…" : s; };
+let dataOverview = [], dataStats = null, dataQ = "", dataKind = "";
 
-async function loadInsights() {
-  let d; try { d = await (await fetch("/insights")).json(); } catch { return; }
-  const box = $("#insights-body");
-  if (!d.documents) { box.innerHTML = `<p class="empty">Add documents to see insights.</p>`; return; }
-  const cur = d.currency || "";
-  const money = (n) => cur + Number(n).toLocaleString(undefined, { maximumFractionDigits: 2 });
-  const hasMoney = d.amount && d.amount.docs_with_amount > 0;
-
-  const ct = d.contacts || {};
-  const tiles = [["Documents", d.documents]];
-  if (hasMoney) { tiles.push(["Total spend", money(d.amount.total)], ["Avg / doc", money(d.amount.avg)]); }
-  if (d.distinct_vendors) tiles.push(["Sources", d.distinct_vendors]);
-  if (d.date_range) tiles.push(["Date range", `${d.date_range.min} → ${d.date_range.max}`]);
-  if (d.tables && d.tables.count) tiles.push(["Tables", `${d.tables.count} · ${d.tables.rows} rows`]);
-  if (ct.emails) tiles.push(["Emails", ct.emails]);
-  if (ct.links) tiles.push(["Links", ct.links]);
-  if (ct.phones) tiles.push(["Phones", ct.phones]);
-
-  let html = `<div class="i-tiles">${tiles.map(([l, v]) =>
-    `<div class="i-tile"><div class="i-v">${esc(String(v))}</div><div class="i-l">${l}</div></div>`).join("")}</div>`;
-
-  if (d.by_vendor && d.by_vendor.length) {
-    const max = Math.max(...d.by_vendor.map((v) => v.total)) || 1;
-    html += iCard("Spend by source", d.by_vendor.map((v) =>
-      iBar(esc(v.name), v.total / max, money(v.total) + (v.count > 1 ? ` · ${v.count}` : ""))).join(""));
-  }
-  if (hasMoney && d.over_time && d.over_time.length) {
-    const max = Math.max(...d.over_time.map((v) => v.total)) || 1;
-    html += iCard("Spend over time", d.over_time.map((v) =>
-      iBar(v.month, v.total / max, money(v.total))).join(""));
-  } else if (d.activity && d.activity.length) {         // non-financial docs still get a timeline
-    const max = Math.max(...d.activity.map((v) => v.count)) || 1;
-    html += iCard("Activity over time (dated items)", d.activity.map((v) =>
-      iBar(v.month, v.count / max, String(v.count))).join(""));
-  }
-  if (d.top_attributes && d.top_attributes.length) {    // recurring structured attributes
-    const max = Math.max(...d.top_attributes.map((a) => a.docs)) || 1;
-    html += iCard("Common attributes (documents)", d.top_attributes.map((a) =>
-      iBar(esc(a.key), a.docs / max, `${a.docs} doc${a.docs > 1 ? "s" : ""}`)).join(""));
-  }
-  const fk = Object.entries(d.field_kinds || {});
-  if (fk.length) {
-    const max = Math.max(...fk.map(([, n]) => n)) || 1;
-    html += iCard("Extracted field types", fk.map(([k, n]) => iBar(k, n / max, String(n))).join(""));
-  }
-  const bt = Object.entries(d.by_type || {});
-  if (bt.length) {
-    html += iCard("Documents by type", bt.map(([t, n]) =>
-      `<span class="i-chip"><b>${n}</b> ${esc(t.toUpperCase())}</span>`).join(""));
-  }
-  box.innerHTML = html;
+async function loadData() {
+  try {
+    const [ov, st] = await Promise.all([fetch("/overview"), fetch("/stats")]);
+    dataOverview = await ov.json(); dataStats = await st.json();
+  } catch { return; }
+  const ready = dataOverview.filter((d) => d.status === "ready");
+  const f = ready.reduce((a, d) => a + (d.field_count || 0), 0);
+  const t = ready.reduce((a, d) => a + (d.table_count || 0), 0);
+  $("#data-live").textContent = ready.length
+    ? `From ${ready.length} file${ready.length > 1 ? "s" : ""}, EasyNotes pulled out ${f} field${f !== 1 ? "s" : ""} and ${t} table${t !== 1 ? "s" : ""}.`
+    : "";
+  if (!ready.length) { renderDataEmpty(); $("#data-empty").hidden = false; $("#data-main").hidden = true; return; }
+  $("#data-empty").hidden = true; $("#data-main").hidden = false;
+  renderFacets();
+  loadLens(currentLens());
+  setTimeout(() => slide($("#dseg-glow"), $("#data-modes .seg.is-active")), 0);
 }
 
-/* ---------- data: all tables together (cross-document) ---------- */
+function currentLens() {
+  const seg = $("#data-modes .seg.is-active");
+  return seg ? seg.dataset.dmode : "records";
+}
+
+function renderFacets() {
+  const present = (dataStats && dataStats.field_kinds) ? dataStats.field_kinds : {};
+  const kinds = KIND_ORDER.filter((k) => present[k]);
+  $("#data-facets").innerHTML =
+    `<button class="chip ${dataKind === "" ? "is-active" : ""}" data-k="">All</button>` +
+    kinds.map((k) => `<button class="chip ${dataKind === k ? "is-active" : ""}" data-k="${k}">${KIND_LABEL[k]}</button>`).join("");
+  $$("#data-facets .chip").forEach((c) => c.addEventListener("click", () => {
+    dataKind = c.dataset.k; renderFacets(); loadLens(currentLens());
+  }));
+}
+
+function loadLens(lens) {
+  if (lens === "records") renderRecords();
+  else if (lens === "tables") { if (!allTables.length) loadAllTables(); else renderAllTables(dataQ); }
+  else loadFields();
+}
+
+/* Records lens — one card per document: the messy file, now structured. */
+function recordCard(d) {
+  const fields = (d.fields || []);
+  const shown = dataKind ? fields.filter((f) => f.kind === dataKind) : fields;
+  const chips = shown.map((f) =>
+    `<span class="rec-chip"><span class="rk">${esc(KIND_LABEL[f.kind] || f.kind)}</span>${esc(clip(f.value, 64))}</span>`).join("");
+  const tbls = (d.tables || []).map((t) =>
+    `<span class="rec-tbl">▦ ${esc(t.name)} <span class="muted">${t.row_count} row${t.row_count !== 1 ? "s" : ""}</span></span>`).join("");
+  const nothing = !fields.length && !(d.tables || []).length;
+  const body = nothing
+    ? `<div class="rec-empty">Prose document — no structured fields found. Search the full text in <b>Search</b>.</div>`
+    : `${chips ? `<div class="rec-fields">${chips}</div>` : `<div class="rec-empty">No ${KIND_LABEL[dataKind] || "fields"} in this document.</div>`}` +
+      `${tbls ? `<div class="rec-tables">${tbls}</div>` : ""}`;
+  return `<article class="rec" data-doc="${d.id}">
+    <div class="rec-head"><span class="ext">${EXT[d.file_type] || d.file_type}</span>
+      <span class="rec-title">${esc(d.title)}</span>
+      <span class="rec-meta">${d.field_count} field${d.field_count !== 1 ? "s" : ""}${d.table_count ? ` · ${d.table_count} table${d.table_count !== 1 ? "s" : ""}` : ""}</span></div>
+    ${body}</article>`;
+}
+function renderRecords() {
+  const q = dataQ.toLowerCase();
+  let docs = dataOverview.filter((d) => d.status === "ready");
+  if (dataKind) docs = docs.filter((d) => (d.fields || []).some((f) => f.kind === dataKind));
+  if (q) docs = docs.filter((d) => (d.title || "").toLowerCase().includes(q) ||
+    (d.fields || []).some((f) => (f.value || "").toLowerCase().includes(q) || (f.key || "").toLowerCase().includes(q)));
+  const box = $("#records-body");
+  box.innerHTML = docs.length ? docs.map(recordCard).join("")
+    : `<p class="empty">No documents match your search.</p>`;
+  $$("#records-body .rec[data-doc]").forEach((el) => el.addEventListener("click", () => openDetail(el.dataset.doc)));
+}
+
+function renderDataEmpty() {
+  $("#data-empty").innerHTML = `
+    <div class="de-card">
+      <div class="de-flow">
+        <div class="de-messy">Invoice #INV-2032 … Acme Corp … Total: Rs.2,742.00 … 2026-03-14 … pat@acme.com</div>
+        <div class="de-arrow">→</div>
+        <div class="de-clean">
+          <span class="rec-chip"><span class="rk">Amount</span>₹2,742.00</span>
+          <span class="rec-chip"><span class="rk">Date</span>2026-03-14</span>
+          <span class="rec-chip"><span class="rk">Email</span>pat@acme.com</span>
+          <span class="rec-chip"><span class="rk">Key facts</span>Vendor: Acme Corp</span>
+        </div>
+      </div>
+      <h3>Turn messy files into structured data.</h3>
+      <p>Add a document and this tab fills with the dates, amounts, contacts, key facts, and tables we pull out — all filterable and searchable.</p>
+      <button class="btn btn-primary" id="de-cta" type="button">Add your first document</button>
+    </div>`;
+  const cta = $("#de-cta");
+  if (cta) cta.addEventListener("click", () => { const a = $$(".tab").find((t) => t.dataset.view === "add"); if (a) activateTab(a); });
+}
+
+/* Tables lens — every extracted table across documents */
 let allTables = [];
 async function loadAllTables() {
   let meta = []; try { meta = await (await fetch("/tables")).json(); } catch { return; }
-  if (!meta.length) { $("#tables-all").innerHTML = `<p class="empty">No tables yet — add a CSV, spreadsheet, or a doc with tables.</p>`; allTables = []; return; }
+  if (!meta.length) { $("#tables-all").innerHTML = `<p class="empty">No tables here — tables come from CSV, spreadsheets, JSON, HTML, or docs that contain tables.</p>`; allTables = []; return; }
   allTables = [];
   for (const t of meta) {
     const r = await (await fetch(`/tables/${t.id}/rows?limit=200`)).json();
     allTables.push({ meta: t, columns: r.columns, rows: r.rows, total: r.total });
   }
-  renderAllTables($("#table-filter").value);
+  renderAllTables(dataQ);
 }
 function renderAllTables(filter) {
   const f = (filter || "").trim().toLowerCase();
@@ -509,29 +551,28 @@ function renderAllTables(filter) {
   }).join("") || `<p class="empty">No rows match “${esc(f)}”.</p>`;
   $$("#tables-all .dtable-h").forEach((el) => el.addEventListener("click", () => openDetail(el.dataset.doc)));
 }
-$("#table-filter").addEventListener("input", (e) => renderAllTables(e.target.value));
 
-/* ---------- data: fields (all values across all docs) ---------- */
-let fieldKind = "";
-const KINDS = ["", "amount", "date", "email", "phone", "url", "pair"];
+/* Fields lens — every extracted fact as one filterable table */
 async function loadFields() {
-  $("#field-kinds").innerHTML = KINDS.map((k) =>
-    `<button class="chip ${k === fieldKind ? "is-active" : ""}" data-k="${k}">${k || "all"}</button>`).join("");
-  $$("#field-kinds .chip").forEach((c) => c.addEventListener("click", () => { fieldKind = c.dataset.k; loadFields(); }));
-  const q = $("#field-filter").value.trim();
   const params = new URLSearchParams();
-  if (fieldKind) params.set("kind", fieldKind);
-  if (q) params.set("q", q);
+  if (dataKind) params.set("kind", dataKind);
+  if (dataQ) params.set("q", dataQ);
   let fields = []; try { fields = await (await fetch("/fields?" + params)).json(); } catch { return; }
   const g = $("#fields-grid");
   if (!fields.length) { g.innerHTML = `<tbody><tr><td class="empty" style="padding:24px">No fields match.</td></tr></tbody>`; return; }
   g.innerHTML = `<thead><tr><th>Document</th><th>Key</th><th>Value</th><th>Type</th></tr></thead><tbody>` +
-    fields.map((f) => `<tr data-doc="${f.document_id}"><td>${esc(f.document_title)}</td><td class="field-key">${esc(f.key)}</td><td>${esc(f.value)}</td><td><span class="field-kind">${f.kind}</span></td></tr>`).join("") +
+    fields.map((f) => `<tr data-doc="${f.document_id}"><td>${esc(f.document_title)}</td><td class="field-key">${esc(f.key)}</td><td>${esc(f.value)}</td><td><span class="field-kind">${esc(f.kind)}</span></td></tr>`).join("") +
     `</tbody>`;
   $$("#fields-grid tr[data-doc]").forEach((el) => el.addEventListener("click", () => openDetail(el.dataset.doc)));
 }
-let fieldFilterTimer = null;
-$("#field-filter").addEventListener("input", () => { clearTimeout(fieldFilterTimer); fieldFilterTimer = setTimeout(loadFields, 200); });
+
+/* shared query bar + lens switch drive all three lenses */
+let dataQTimer = null;
+$("#data-q").addEventListener("input", (e) => {
+  clearTimeout(dataQTimer);
+  dataQTimer = setTimeout(() => { dataQ = e.target.value.trim(); loadLens(currentLens()); }, 200);
+});
+$$("#data-modes .seg").forEach((s) => s.addEventListener("click", () => loadLens(s.dataset.dmode)));
 
 const STOP = new Set("a an the is are was were be been am im i who what when where why how which of to in on at for and or but if it its this that as by with from do does did can could will would my me you your we".split(" "));
 function mark(text, q) {
