@@ -36,6 +36,23 @@ _PAIR = re.compile(r"^[ \t]*([A-Za-z][\w \-/]{1,39})[ \t]*:(?![:=])[ \t]*(.+?)[ 
 # Tokens that mark a "pair" as really code/diagram/markup, not a human key:value fact.
 _NOT_A_FACT = re.compile(r"[|<>{}\[\]`]|-->|-\|>|-\.->|==>|->|::|:=|&&")
 
+# Fenced code blocks and diagram/code lines are stripped before pair-scanning so a
+# document that embeds a Mermaid diagram or code snippet can't spawn junk "facts".
+# (Typed rules — email/amount/date/… — still run over the full text.)
+_FENCE = re.compile(r"```.*?```", re.S)
+_DIAGRAM_LINE = re.compile(
+    r"^\s*(graph|flowchart|sequenceDiagram|classDiagram|erDiagram|stateDiagram|gantt|"
+    r"subgraph|style|classDef|class|linkStyle|participant|actor|note (?:over|left|right))\b", re.I)
+_ARROW_LINE = re.compile(r"-->|-\.->|==>|-\|>|\|>|--\||~~~|→|←|⟶")
+
+
+def _prose_for_pairs(text: str) -> str:
+    """Text with fenced code and diagram/arrow lines removed — the safe input for
+    key:value pair extraction (which is otherwise easily fooled by code/diagrams)."""
+    text = _FENCE.sub(" ", text)
+    return "\n".join(ln for ln in text.splitlines()
+                     if not _DIAGRAM_LINE.search(ln) and not _ARROW_LINE.search(ln))
+
 
 def _looks_like_pair(key: str, value: str) -> bool:
     """Reject key:value 'facts' that are actually code, diagram edges or punctuation noise."""
@@ -82,7 +99,7 @@ def extract_fields(text: str, limit: int = 200) -> list[Field]:
         if len(out) >= limit:
             return out
     _SCHEMES = {"http", "https", "ftp", "mailto", "tel"}
-    for key, val in _PAIR.findall(text):
+    for key, val in _PAIR.findall(_prose_for_pairs(text)):
         k = key.strip()
         # skip URL/scheme false positives ("https://..." parses as https : //...)
         if k.lower() in _SCHEMES or val.startswith("//"):

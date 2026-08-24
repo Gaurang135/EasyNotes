@@ -57,6 +57,17 @@ def test_pair_ignores_diagram_and_code_lines():
     assert [f for f in extract_fields(text) if f.kind == "pair"] == []
 
 
+def test_pair_ignores_mermaid_style_and_fenced_code():
+    # diagram directives ("style X fill:…"), diagram headers, and fenced code blocks
+    # must not yield pairs — only the real key:value outside them survives
+    text = ("flowchart TD\n"
+            "style PHASE1 fill:#eff6ff,stroke:#3b82f6\n"
+            "```\nsecret: do-not-extract\n```\n"
+            "Vendor: Acme Corp")
+    pairs = {f.key: f.value for f in extract_fields(text) if f.kind == "pair"}
+    assert pairs == {"Vendor": "Acme Corp"}
+
+
 def test_pair_rejects_noise_values():
     # a colon line whose value is punctuation/arrows carries no real fact
     text = "Arrow: -->\nJunk: |{}[]\nEmpty: &&&"
