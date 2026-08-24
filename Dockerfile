@@ -24,6 +24,8 @@ RUN python scripts/bake_model.py
 
 COPY --chown=app:app app/ app/
 COPY --chown=app:app static/ static/
+# bundled demo corpus for the one-click seed
+COPY --chown=app:app samples/ samples/
 
 # From here on the image is fully offline: HF hub reads only the baked cache.
 ENV HF_HUB_OFFLINE=1
