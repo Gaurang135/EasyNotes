@@ -192,7 +192,27 @@ async function runAsk(q, box) {
       Meanwhile, Hybrid / Meaning / Keyword search work now.</div></div>`;
     return;
   }
-  if (!r.ok) { box.innerHTML = `<p class="empty">${esc(d.detail || "answer error")}</p>`; return; }
+  if (!r.ok) {
+    const busy = r.status === 429 || r.status === 502;
+    box.innerHTML = `<div class="answer-card warn">
+      <div class="answer-h">${busy ? "⏳ Ask is busy" : "✦ Ask error"}</div>
+      <div class="answer-body">${busy
+        ? "The answer model is temporarily unavailable. Search still works instantly — try Ask again in a moment."
+        : esc(d.detail || "answer error")}</div>
+      <button class="retry-ask" type="button">Try again</button></div>`;
+    const b = box.querySelector(".retry-ask"); if (b) b.addEventListener("click", () => runAsk(q, box));
+    return;
+  }
+  if (d.rate_limited) {
+    box.innerHTML = `<div class="answer-card warn">
+      <div class="answer-h">⏳ Ask is rate-limited</div>
+      <div class="answer-body">The answer model (free tier) is briefly rate-limited. Search still
+      works instantly. Try again in a few seconds — or ask a narrower question so there's less to
+      process.</div>
+      <button class="retry-ask" type="button">Try again</button></div>`;
+    const b = box.querySelector(".retry-ask"); if (b) b.addEventListener("click", () => runAsk(q, box));
+    return;
+  }
   const cites = (d.citations || []).map((c) =>
     `<span class="cite" data-doc="${c.document_id}">${esc(c.document_title)}</span>`).join("");
   box.innerHTML = `<div class="answer-card">

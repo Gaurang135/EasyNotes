@@ -182,6 +182,12 @@ textarea.field { resize: vertical; line-height: 1.6; }
   background: radial-gradient(130% 130% at 0% 0%, rgba(242,166,90,.12), transparent 55%), var(--panel);
   backdrop-filter: blur(12px); animation: cardin .5s var(--ease) both; }
 .answer-card.off { border-color: var(--line-strong); }
+.answer-card.warn { border-color: rgba(242,166,90,.55);
+  background: radial-gradient(130% 130% at 0% 0%, rgba(242,166,90,.16), transparent 55%), var(--panel); }
+.retry-ask { margin-top: 14px; cursor: pointer; font: 500 13px "Instrument Sans", sans-serif;
+  color: #14161f; background: linear-gradient(120deg, var(--ember-hot), var(--ember));
+  border: 0; border-radius: 999px; padding: 8px 18px; transition: transform .15s var(--ease), box-shadow .15s var(--ease); }
+.retry-ask:hover { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(242,166,90,.4); }
 .answer-h { font: 600 12px "JetBrains Mono", monospace; letter-spacing: .14em; text-transform: uppercase; color: var(--ember-hot); margin-bottom: 12px; }
 .answer-body { color: var(--text); font-size: 15.5px; line-height: 1.7; }
 .answer-body p { margin: 0 0 10px; }
