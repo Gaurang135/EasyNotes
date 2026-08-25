@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from app.models import SearchFilter
 from app.search.service import run_search, detect_aggregate_intent, structured_context
+from app.search.tableagg import table_facts_block
 from app.answer import reconcile_listed_total
 from app.api.deps import get_state
 
@@ -32,6 +33,13 @@ def answer(body: AnswerReq, state=Depends(get_state)):
     # distinct lists are computed over all the data; excerpts still ride along for detail.
     aggregate = detect_aggregate_intent(body.q)
     extra = structured_context(state.conn, body.q) if aggregate else ""
+    # Sums/counts/averages over a big table must be computed in code — retrieval only shows
+    # the model a subset of rows, so it would otherwise aggregate a partial view. These facts
+    # are exact and the prompt tells the model to use them verbatim.
+    tfacts = table_facts_block(state.conn, body.q)
+    if tfacts:
+        extra = (extra + "\n\n" + tfacts) if extra else tfacts
+        aggregate = True
     hits = run_search(state.conn, state.embedder, state.vector_index, state.fts_index,
                       query=body.q, mode=body.mode, flt=SearchFilter(), limit=10, offset=0)
     if not hits and not extra:
