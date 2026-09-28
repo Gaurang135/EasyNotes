@@ -12,7 +12,8 @@ as a single container, is fully self-hosted, needs **no LLM** by default (ground
 > Despite the name, EasyNotes handles far more than notes — spreadsheets, slide
 > decks, and PDFs all go in the same box.
 
-🚀 Live Demo: https://easynotes-latest.onrender.com/
+**🚀 Live Demo:** <a href="https://easynotes-latest.onrender.com/" target="_blank">https://easynotes-latest.onrender.com/</a>
+
 
 ## Quick start
 
